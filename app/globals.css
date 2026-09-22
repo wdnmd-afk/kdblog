@@ -1,26 +1,693 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/**
+ * 设计系统底座。
+ *
+ * 基调：中性灰承担约 95% 的界面，单一强调蓝只用于三处——焦点环、导航选中态、
+ * 主操作按钮。这是 Linear / Vercel / Stripe 这类工具的共同做法：
+ * 层级靠「中性色的明度差 + 一个指向性的强调色」建立，而不是靠多种色相。
+ *
+ * 为什么不用纯中性灰（chroma 0）：纯灰在屏幕上偏"脏"，缺少方向感。
+ * 这里全套灰阶统一带 hue 250~266 的极低彩度（0.002~0.021），
+ * 肉眼看仍是灰，但与强调蓝同属冷色系，叠在一起不会互相打架。
+ *
+ * 命名沿用 ink-*：它已被全部页面引用，改名收益为零而改动面极大。
+ */
+@theme {
+  /* ---------------------------------------------------------------------
+   * 中性灰阶（冷调）
+   *
+   * 50/100  大面积浅底（页面底、表头、悬停）
+   * 200/300 分隔线与控件边框
+   * 400/500 占位符与次要文字
+   * 600/700 正文
+   * 800/900 标题、主按钮
+   * 950     代码块底、遮罩
+   * ------------------------------------------------------------------- */
+  --color-ink-50: oklch(0.984 0.002 250); /* #F8FAFC 页面底 */
+  --color-ink-100: oklch(0.968 0.004 250); /* #F1F5F9 悬停底色 */
+  --color-ink-200: oklch(0.929 0.006 250); /* #E2E8F0 分隔线 */
+  --color-ink-300: oklch(0.869 0.009 250); /* #CBD5E1 控件边框 */
+  --color-ink-400: oklch(0.711 0.016 252); /* #94A3B8 占位符、弱化图标 */
+  --color-ink-500: oklch(0.585 0.021 254); /* #64748B 次要文字 */
+  --color-ink-600: oklch(0.487 0.022 255); /* #475569 说明文字（浅底上的最低可读档） */
+  --color-ink-700: oklch(0.394 0.022 257); /* #334155 正文 */
+  --color-ink-800: oklch(0.283 0.021 260); /* #1E293B 强调正文 */
+  --color-ink-900: oklch(0.212 0.021 263); /* #0F172A 标题、主按钮 */
+  --color-ink-950: oklch(0.146 0.02 266); /* #020617 遮罩、代码块底 */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* ---------------------------------------------------------------------
+   * 强调蓝
+   *
+   * 只出现在：焦点环（300/500）、导航选中态（50 底 + 600 字/边条）、
+   * 主按钮（600，hover 700）、链接。
+   * 不要拿它做装饰性背景或图标染色——那样它就不再"指向注意力"了。
+   * ------------------------------------------------------------------- */
+  --color-accent-50: oklch(0.97 0.014 254); /* #EFF6FF 选中态浅底 */
+  --color-accent-100: oklch(0.932 0.03 256); /* #DBEAFE 选中态底（更实） */
+  --color-accent-200: oklch(0.882 0.055 258); /* #BFDBFE 边框弱化态 */
+  --color-accent-300: oklch(0.809 0.09 260); /* #93C5FD 焦点环外圈 */
+  --color-accent-500: oklch(0.623 0.19 260); /* #3B82F6 焦点环、强调边框 */
+  --color-accent-600: oklch(0.546 0.222 263); /* #2563EB 主按钮、选中文字 */
+  --color-accent-700: oklch(0.488 0.217 264); /* #1D4ED8 主按钮按下态 */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  /* ---------------------------------------------------------------------
+   * 语义色
+   *
+   * 刻意只给三档（浅底 / 主色 / 深色），不铺满 50~900：
+   * 它们只用在徽章、toast 图标与危险操作按钮上，用不到中间档。
+   * ------------------------------------------------------------------- */
+  --color-danger-50: oklch(0.971 0.013 17); /* #FEF2F2 悬停底 */
+  --color-danger-100: oklch(0.936 0.032 17); /* #FEE2E2 按下底（须比 50 更深才有反馈） */
+  --color-danger-200: oklch(0.885 0.062 18); /* #FECACA 边框 */
+  --color-danger-600: oklch(0.577 0.245 27); /* #DC2626 危险操作 */
+  --color-danger-700: oklch(0.505 0.213 27); /* #B91C1C 按下态 */
+
+  --color-success-50: oklch(0.982 0.018 155); /* #F0FDF4 */
+  --color-success-200: oklch(0.897 0.076 156); /* #BBF7D0 */
+  --color-success-600: oklch(0.596 0.145 163); /* #16A34A 成功提示 */
+
+  --color-warning-50: oklch(0.987 0.022 95); /* #FEFCE8 */
+  --color-warning-600: oklch(0.681 0.162 76); /* #CA8A04 待处理状态 */
+
+  /* ---------------------------------------------------------------------
+   * 字体
+   *
+   * Geist 放在首位（next/font 自托管，见 app/layout.tsx）。
+   *
+   * ⚠ 此前这里以 -apple-system 开头，导致在 Windows 上直接落到 Segoe UI，
+   * 自托管的 Geist 完全没生效——界面因此显得像默认管理后台。
+   * 拉丁字形必须先于系统字体命中，中文再由 PingFang / 微软雅黑接手。
+   * ------------------------------------------------------------------- */
+  --font-sans:
+    var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono:
+    var(--font-geist-mono), ui-monospace, "SF Mono", "Cascadia Mono",
+    Consolas, monospace;
+
+  /* 阅读区宽度：中英混排下 40em 约合 65 字符，长文行长舒适 */
+  --container-prose: 40em;
+
+  /* ---------------------------------------------------------------------
+   * 圆角
+   *
+   * 两档就够：控件与小面板用 6px，大卡片与浮层用 10px。
+   * 此前统一 4px 显得局促且缺层次；8px 以上在紧凑密度下又太圆润。
+   * ------------------------------------------------------------------- */
+  --radius-panel: 6px; /* 按钮、输入框、徽章、小面板 */
+  --radius-card: 10px; /* 卡片、弹层、抽屉 */
+
+  /* ---------------------------------------------------------------------
+   * 阴影（四级）
+   *
+   * 此前只有一个 --shadow-panel 同时服务侧栏、卡片、下拉与弹窗，
+   * 结果浮层"浮不起来"——所有层都在同一视觉高度上。
+   * 现在按抬升高度分四级，色值统一用 ink-950 的低透明度而非纯黑：
+   * 纯黑阴影在冷调灰底上会发灰发脏。
+   * ------------------------------------------------------------------- */
+  --shadow-panel:
+    0 1px 2px 0 rgb(2 6 23 / 0.04), 0 1px 3px 0 rgb(2 6 23 / 0.06);
+  --shadow-raised:
+    0 2px 4px -1px rgb(2 6 23 / 0.06), 0 4px 8px -2px rgb(2 6 23 / 0.08);
+  --shadow-popover:
+    0 4px 8px -2px rgb(2 6 23 / 0.08), 0 12px 24px -6px rgb(2 6 23 / 0.12);
+  --shadow-modal:
+    0 8px 16px -8px rgb(2 6 23 / 0.12), 0 24px 48px -12px rgb(2 6 23 / 0.24);
+
+  /* ---------------------------------------------------------------------
+   * 动效
+   *
+   * 微交互统一 150ms，浮层进场 160~200ms。
+   * 遮罩（120ms）比抽屉（180ms）快是刻意的：遮罩先压暗，抽屉随后滑入，
+   * 同速会让整个动作显得拖沓。
+   * ------------------------------------------------------------------- */
+  --animate-fade-in: fade-in 120ms ease-out;
+  --animate-slide-in-right: slide-in-right 180ms cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-scale-in: scale-in 160ms cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-slide-up: slide-up 200ms cubic-bezier(0.32, 0.72, 0, 1);
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-in-right {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  /* 弹窗从 98% 放大：幅度刻意很小，超过 5% 会显得"弹跳"而不像系统组件 */
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/**
+ * z-index 分级。
+ *
+ * 用具名变量而非随手写 z-[9999]：层级冲突时能一眼看出谁该在上面。
+ * 各层之间留 10 的间隔，便于临时插入而不必全局重排。
+ */
+@theme {
+  --z-index-sticky: 10; /* 吸顶工具栏 */
+  --z-index-dropdown: 20; /* 下拉菜单、斜杠命令面板 */
+  --z-index-overlay: 30; /* 抽屉/弹窗的遮罩 */
+  --z-index-modal: 40; /* 抽屉、弹窗本体 */
+  --z-index-toast: 50; /* 全局提示，永远在最上 */
+}
+
+@layer base {
+  html {
+    /* 锚点跳转时给标题留出顶部空间，避免被吸顶栏遮住 */
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #fff;
+    color: var(--color-ink-900);
+    /* 字距略收紧：Geist 在正文尺寸下默认偏松 */
+    letter-spacing: -0.006em;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /**
+   * 焦点环。
+   *
+   * 改用强调蓝而非深灰：深灰环在深色按钮上几乎看不见，
+   * 键盘用户会完全失去位置感。offset 2px 让环与控件之间留出白边，
+   * 在密排的工具栏里也能分辨是哪个按钮获得了焦点。
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+  }
+
+  /* 复选框：选中态用强调蓝，与导航选中态保持同一套语义 */
+  input[type="checkbox"] {
+    appearance: none;
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid var(--color-ink-300);
+    border-radius: 4px;
+    background-color: #fff;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition:
+      background-color 150ms,
+      border-color 150ms;
+  }
+
+  input[type="checkbox"]:hover {
+    border-color: var(--color-ink-400);
+  }
+
+  input[type="checkbox"]:checked {
+    background-color: var(--color-accent-600);
+    border-color: var(--color-accent-600);
+    /* 勾号用内联 SVG，避免额外请求 */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-6'/%3E%3C/svg%3E");
+    background-size: 100%;
+  }
+
+  /**
+   * 滚动条。
+   *
+   * 后台有多个独立滚动区（侧栏、抽屉、编辑器），默认滚动条太宽会割裂版面。
+   * 只在支持的浏览器上收窄，不支持的退回默认——不做 JS 模拟滚动条，
+   * 那会破坏键盘与触控板的原生行为。
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-300) transparent;
+  }
+}
+
+@layer components {
+  /**
+   * 文章正文排版。
+   *
+   * typography 插件默认带蓝色链接；这里链接改为正文色 + 下划线，
+   * 因为强调蓝在本设计系统里专用于"可操作"，正文链接用它会稀释这个语义。
+   */
+  .prose-article {
+    --tw-prose-body: var(--color-ink-700);
+    --tw-prose-headings: var(--color-ink-900);
+    --tw-prose-links: var(--color-ink-900);
+    --tw-prose-bold: var(--color-ink-900);
+    --tw-prose-quotes: var(--color-ink-700);
+    --tw-prose-quote-borders: var(--color-ink-300);
+    --tw-prose-code: var(--color-ink-900);
+    --tw-prose-pre-bg: var(--color-ink-50);
+    --tw-prose-pre-code: var(--color-ink-800);
+    --tw-prose-th-borders: var(--color-ink-300);
+    --tw-prose-td-borders: var(--color-ink-200);
+    --tw-prose-hr: var(--color-ink-200);
+    --tw-prose-captions: var(--color-ink-500);
+    --tw-prose-counters: var(--color-ink-500);
+    --tw-prose-bullets: var(--color-ink-300);
+  }
+
+  /* 引用块：左侧细线 + 浅灰底，不带引号装饰 */
+  .prose-article blockquote {
+    background-color: var(--color-ink-50);
+    border-left-width: 2px;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
+    font-style: normal;
+  }
+
+  .prose-article blockquote p:first-of-type::before,
+  .prose-article blockquote p:last-of-type::after {
+    content: none;
+  }
+
+  /* 代码块：浅灰底而非深色，与整体明亮基调统一 */
+  .prose-article pre {
+    border: 1px solid var(--color-ink-200);
+  }
+
+  /**
+   * 编辑器占位提示。
+   *
+   * Placeholder 扩展只负责往空段落上挂 data-placeholder 与 is-empty 类，
+   * 实际显示靠这段样式——漏了它占位文字根本不会出现，也不报错。
+   *
+   * 用 ::before 而非改 textContent：伪元素不进入文档模型，
+   * 不会被打字、选中或复制带出来。
+   */
+  .tiptap p.is-editor-empty:first-child::before,
+  .tiptap p.is-empty:first-child::before {
+    content: attr(data-placeholder);
+    color: var(--color-ink-400);
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+
+  /* 编辑器内表格的表头底色，与前台正文区分 */
+  .tiptap th {
+    background-color: var(--color-ink-50);
+  }
+
+  /* ---------------------------------------------------------------------
+   * 新增块级与行内元素
+   *
+   * 每条规则都同时挂 .tiptap（编辑区）与 .prose-article（前台正文）：
+   * 两处的容器 class 不同，只写一处会导致"编辑器里是这个样子、
+   * 发布后变成另一个样子"，而这类问题在开发时几乎不会注意到。
+   * ------------------------------------------------------------------- */
+
+  /* ---------------- 提示块 ---------------- */
+
+  /**
+   * 提示块。
+   *
+   * 用左侧色条 + 极浅底色，不使用整块饱和背景：正文里出现大色块会压过
+   * 周围文字，而提示块的目的是被注意到、不是成为视觉主体。
+   *
+   * 四种语气靠 [data-tone] 属性选择器切换，属性值由节点渲染，
+   * 与 lib/tiptap/callout-tone.ts 的定义一一对应。
+   */
+  .tiptap .kd-callout,
+  .prose-article .kd-callout {
+    border-left: 3px solid var(--color-ink-300);
+    border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
+    padding: 0.75rem 1rem;
+    background-color: var(--color-ink-50);
+  }
+
+  /* 块内段落的默认上下边距会撑开色块，收掉一半 */
+  .tiptap .kd-callout > p,
+  .prose-article .kd-callout > p {
+    margin-top: 0.25rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .tiptap .kd-callout > p:first-child,
+  .prose-article .kd-callout > p:first-child {
+    margin-top: 0;
+  }
+
+  .tiptap .kd-callout > p:last-child,
+  .prose-article .kd-callout > p:last-child {
+    margin-bottom: 0;
+  }
+
+  .tiptap .kd-callout[data-tone="info"],
+  .prose-article .kd-callout[data-tone="info"] {
+    border-left-color: var(--color-accent-500);
+    background-color: var(--color-accent-50);
+  }
+
+  .tiptap .kd-callout[data-tone="success"],
+  .prose-article .kd-callout[data-tone="success"] {
+    border-left-color: var(--color-success-600);
+    background-color: var(--color-success-50);
+  }
+
+  .tiptap .kd-callout[data-tone="warning"],
+  .prose-article .kd-callout[data-tone="warning"] {
+    border-left-color: var(--color-warning-600);
+    background-color: var(--color-warning-50);
+  }
+
+  .tiptap .kd-callout[data-tone="danger"],
+  .prose-article .kd-callout[data-tone="danger"] {
+    border-left-color: var(--color-danger-600);
+    background-color: var(--color-danger-50);
+  }
+
+  /* ---------------- 折叠块 ---------------- */
+
+  .tiptap .kd-details,
+  .prose-article .kd-details {
+    border: 1px solid var(--color-ink-200);
+    border-radius: var(--radius-panel);
+    padding: 0.5rem 0.75rem;
+  }
+
+  /**
+   * summary 去掉浏览器默认的三角标记，改用自绘的箭头。
+   *
+   * 默认标记在不同浏览器上形态差异很大（实心三角、空心三角、位置偏移），
+   * 在紧凑排版里尤其突兀；自绘一个可以控制尺寸与对齐，
+   * 并用 [open] 属性切换方向表达展开状态。
+   */
+  .tiptap .kd-details > summary,
+  .prose-article .kd-details > summary {
+    cursor: pointer;
+    list-style: none;
+    font-weight: 500;
+    color: var(--color-ink-800);
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .tiptap .kd-details > summary::-webkit-details-marker,
+  .prose-article .kd-details > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* 自绘箭头。用 CSS 三角而非图标字体，避免为两个箭头引入资源 */
+  .tiptap .kd-details > summary::before,
+  .prose-article .kd-details > summary::before {
+    content: "";
+    width: 0.375rem;
+    height: 0.375rem;
+    border-right: 1.5px solid var(--color-ink-400);
+    border-bottom: 1.5px solid var(--color-ink-400);
+    /* 旋转 45 度得到朝右的箭头，展开时再转 45 度朝下 */
+    transform: rotate(-45deg);
+    transition: transform 150ms;
+    flex-shrink: 0;
+  }
+
+  .tiptap .kd-details[open] > summary::before,
+  .prose-article .kd-details[open] > summary::before {
+    transform: rotate(45deg);
+  }
+
+  .tiptap .kd-details > div[data-type="detailsContent"],
+  .prose-article .kd-details > div[data-type="detailsContent"] {
+    padding-top: 0.5rem;
+  }
+
+  /* ---------------- 上下标 ---------------- */
+
+  /**
+   * line-height 归零是关键：上下标默认会把行高撑开，
+   * 一行里有上下标时整段的行距都会跟着变大。
+   */
+  .tiptap sub,
+  .tiptap sup,
+  .prose-article sub,
+  .prose-article sup {
+    line-height: 0;
+    font-size: 0.75em;
+  }
+
+  /* ---------------- 代码块语法高亮 ---------------- */
+
+  /**
+   * 高亮配色。
+   *
+   * 自己写而不引 highlight.js 的主题 CSS：官方主题是深色底配色，
+   * 而这里是浅灰底（见上文 .prose-article pre），直接套用会对比度不足。
+   * 色相沿用设计系统的语义色，与界面其余部分保持同一套语汇。
+   *
+   * 类名由 lowlight 输出，同时作用于编辑区与前台。
+   */
+  .tiptap .hljs-comment,
+  .tiptap .hljs-quote,
+  .prose-article .hljs-comment,
+  .prose-article .hljs-quote {
+    color: var(--color-ink-400);
+    font-style: italic;
+  }
+
+  .tiptap .hljs-keyword,
+  .tiptap .hljs-selector-tag,
+  .tiptap .hljs-literal,
+  .tiptap .hljs-section,
+  .tiptap .hljs-doctag,
+  .tiptap .hljs-name,
+  .prose-article .hljs-keyword,
+  .prose-article .hljs-selector-tag,
+  .prose-article .hljs-literal,
+  .prose-article .hljs-section,
+  .prose-article .hljs-doctag,
+  .prose-article .hljs-name {
+    color: #7c3aed;
+  }
+
+  .tiptap .hljs-string,
+  .tiptap .hljs-regexp,
+  .tiptap .hljs-addition,
+  .tiptap .hljs-attribute,
+  .tiptap .hljs-meta .hljs-string,
+  .prose-article .hljs-string,
+  .prose-article .hljs-regexp,
+  .prose-article .hljs-addition,
+  .prose-article .hljs-attribute,
+  .prose-article .hljs-meta .hljs-string {
+    color: #16a34a;
+  }
+
+  .tiptap .hljs-number,
+  .tiptap .hljs-variable,
+  .tiptap .hljs-template-variable,
+  .tiptap .hljs-type,
+  .tiptap .hljs-selector-attr,
+  .tiptap .hljs-selector-pseudo,
+  .prose-article .hljs-number,
+  .prose-article .hljs-variable,
+  .prose-article .hljs-template-variable,
+  .prose-article .hljs-type,
+  .prose-article .hljs-selector-attr,
+  .prose-article .hljs-selector-pseudo {
+    color: #ca8a04;
+  }
+
+  .tiptap .hljs-title,
+  .tiptap .hljs-title.function_,
+  .tiptap .hljs-title.class_,
+  .tiptap .hljs-built_in,
+  .prose-article .hljs-title,
+  .prose-article .hljs-title.function_,
+  .prose-article .hljs-title.class_,
+  .prose-article .hljs-built_in {
+    color: #2563eb;
+  }
+
+  .tiptap .hljs-attr,
+  .tiptap .hljs-property,
+  .tiptap .hljs-selector-class,
+  .tiptap .hljs-selector-id,
+  .prose-article .hljs-attr,
+  .prose-article .hljs-property,
+  .prose-article .hljs-selector-class,
+  .prose-article .hljs-selector-id {
+    color: #dc2626;
+  }
+
+  .tiptap .hljs-deletion,
+  .prose-article .hljs-deletion {
+    color: var(--color-danger-600);
+  }
+
+  .tiptap .hljs-emphasis,
+  .prose-article .hljs-emphasis {
+    font-style: italic;
+  }
+
+  .tiptap .hljs-strong,
+  .prose-article .hljs-strong {
+    font-weight: 600;
+  }
+
+  /**
+   * 选中文字的高亮。
+   *
+   * 用强调蓝的浅底而非灰：灰色高亮在灰调界面里几乎看不出选中范围，
+   * 而选区是编辑器里最需要即时反馈的状态。
+   */
+  .tiptap ::selection {
+    background-color: var(--color-accent-100);
+  }
+}
+
+/**
+ * 尊重系统的减弱动效设置。
+ *
+ * 只压掉动画与位移，不禁用 transition 的颜色变化——
+ * 后者是状态反馈而非装饰，去掉会让界面显得没响应。
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+
+/* ===========================================================================
+ * 任务清单（无层样式）
+ *
+ * ⚠️ 这一段刻意不放进 @layer——放进去就对不齐，原因值得记下来。
+ *
+ * Tailwind 的层顺序是 theme → base → components → utilities，
+ * 后一层压过前一层，**与选择器优先级无关**。而 @tailwindcss/typography
+ * 的规则位于 utilities 层，其中有一条
+ *
+ *     .prose-lg :where(.prose-lg > ul > li p) { margin-top: .888889em }
+ *
+ * 专门给列表项里的段落加上外边距。此前本段写在 @layer components 里，
+ * 即便选择器优先级更高（0,2,3 对 0,1,0）也照样被它压住，段落下移 16px，
+ * 复选框与文字就错开了半个行高。
+ *
+ * 无层（unlayered）样式的优先级高于任何层，因此这里能稳定覆盖插件默认值。
+ * =========================================================================== */
+
+/* ---------------- 任务清单 ---------------- */
+
+.tiptap ul[data-type="taskList"],
+.prose-article ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.tiptap ul[data-type="taskList"] li,
+.prose-article ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+/**
+ * 复选框与首行文字对齐。
+ *
+ * 思路是让「标签高度」与「首行文字的行高」由同一个数推出来，
+ * 两者相等则居中后的复选框中心必然落在首行文字中心上。
+ *
+ * 用 em 而不是 lh：em 跟随字号，prose 与 prose-lg 字号不同也能各自对齐，
+ * 且 lh 需要 Chrome 109+ / Safari 16.4+，旧浏览器上整条声明会被忽略。
+ *
+ * 下面的 1.75 必须与文字容器里设定的 line-height 一致，改一处要改两处。
+ */
+.tiptap ul[data-type="taskList"] li > label,
+.prose-article ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  /* = 一行文字的高度（line-height × font-size），见下方 1.75 的说明 */
+  height: 1.75em;
+}
+
+.tiptap ul[data-type="taskList"] li > div,
+.prose-article ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/**
+ * 文字容器：清掉段落外边距，并固定行高。
+ *
+ * TaskItem 的文字包在 <div><p>…</p></div> 里，prose 给 <p> 加了上下外边距，
+ * 会把首行整体往下推。归零后首行顶端与容器顶端一致。
+ *
+ * line-height 写死 1.75 而不继承 prose：上面 label 的高度就是按这个倍数
+ * 算的，继承过来会在 prose-lg（1.77778）下产生零点几像素的偏差。
+ * 两处用同一个数，对齐关系才是确定的。
+ */
+.tiptap ul[data-type="taskList"] li > div > *,
+.prose-article ul[data-type="taskList"] li > div > * {
+  margin-top: 0;
+  margin-bottom: 0;
+  line-height: 1.75;
+}
+
+/**
+ * 覆盖全局的复选框样式。
+ *
+ * TaskItem 的结构是 <label><input><span></span></label>，那个空 span
+ * 是它预设的"自绘复选框"位置。全局样式已经给 input 画了勾号，
+ * 两者叠加会出现两个勾。这里把 span 隐掉，只保留 input 的样式。
+ */
+.tiptap ul[data-type="taskList"] li > label > span,
+.prose-article ul[data-type="taskList"] li > label > span {
+  display: none;
+}
+
+/* 只读前台不允许勾选，用默认光标而非手型，避免看起来可交互 */
+.prose-article ul[data-type="taskList"] input[type="checkbox"] {
+  pointer-events: none;
+}
+
+.tiptap ul[data-type="taskList"] li[data-checked="true"] > div,
+.prose-article ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--color-ink-400);
+  text-decoration: line-through;
 }

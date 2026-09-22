@@ -1,3 +1,11 @@
-ignoredBuiltDependencies:
+# 允许执行 postinstall 的依赖白名单。
+# argon2 是 native 模块（密码哈希），@prisma/engines 需要下载查询引擎二进制，
+# 两者不编译/不下载都会导致运行期直接失败，因此必须放行。
+onlyBuiltDependencies:
+  - argon2
+  - esbuild
   - sharp
   - unrs-resolver
+  - prisma
+  - "@prisma/engines"
+  - "@prisma/client"

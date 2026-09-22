@@ -1,0 +1,14 @@
+# 构建上下文排除项。
+# node_modules 必须排除：本机的原生模块（argon2、sharp）与容器平台不兼容，
+# 需在镜像内重新安装编译。
+node_modules
+.next
+.git
+.env
+.env.*
+uploads
+docs
+build
+*.log
+.vscode
+.idea

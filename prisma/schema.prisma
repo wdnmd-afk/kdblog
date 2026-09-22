@@ -1,0 +1,248 @@
+// kdblog 数据模型
+// 设计约定见 docs/execution/001-基础架构搭建.md
+//
+// 关键约束：
+// 1. Post/Page 均为软删除（deletedAt），所有读取必须经 server/services 层封装的查询函数，
+//    禁止在组件或 action 中直连 prisma.post.findMany，否则回收站内容会漏到前台。
+// 2. contentHtml 使用 @db.Text（PostgreSQL 无长度限制），存放发布时预渲染并 sanitize 后的 HTML。
+// 3. SeoMeta 独立成表而非内嵌 Post：Page 也需要 SEO，且避免与正文并发写互相覆盖。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 起 datasource 内不再支持 url：
+// 迁移用的连接串放在项目根 prisma.config.ts，运行时连接由 PrismaClient 的 adapter 提供（见 lib/db.ts）
+datasource db {
+  provider = "postgresql"
+}
+
+/// 内容状态机
+/// DRAFT 草稿 -> PUBLISHED 已发布；SCHEDULED 预留给定时发布（当前范围不实现调度器）
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+  ARCHIVED
+}
+
+/// robots 指令，仅枚举而非自由输入，避免写出无效指令
+enum RobotsDirective {
+  INDEX_FOLLOW
+  NOINDEX_FOLLOW
+  INDEX_NOFOLLOW
+  NOINDEX_NOFOLLOW
+}
+
+/// 管理员账号。当前为单管理员模式，但 Post.authorId 已预留以便后续扩展多用户
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  /// Argon2 哈希，绝不存明文
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  posts Post[]
+  pages Page[]
+
+  @@map("users")
+}
+
+/// 文章。id 为自增整数，直接作为前台 URL 的查询键（/posts/{slug}-{id}）
+model Post {
+  id      Int    @id @default(autoincrement())
+  /// 仅 a-z0-9- ，前台 URL 的可读部分；不匹配时页面层 301 到正确地址
+  slug    String @unique
+  title   String
+  /// 摘要，为空时由正文自动截取
+  excerpt String @db.Text
+
+  /// Tiptap 文档 JSON，编辑器的唯一事实源
+  contentJson Json
+  /// 发布时由 contentJson 渲染 + sanitize 得到，前台直接输出。为空表示尚未发布过
+  contentHtml String? @db.Text
+
+  status      ContentStatus @default(DRAFT)
+  publishedAt DateTime?
+  /// 软删除标记，非 null 表示在回收站中
+  deletedAt   DateTime?
+
+  viewCount Int @default(0)
+
+  categoryId Int?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  authorId String?
+  author   User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tags      PostTag[]
+  revisions PostRevision[]
+  seo       SeoMeta?
+
+  /// 列表页默认按发布时间倒序筛选未删除的已发布文章
+  @@index([status, deletedAt, publishedAt])
+  @@index([categoryId])
+  @@map("posts")
+}
+
+/// 文章版本快照（全量）。发布时写入一条，仅保留最近 20 版，超出部分在同一事务内删除
+model PostRevision {
+  id     Int  @id @default(autoincrement())
+  postId Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  /// 该文章内递增的版本号，与 postId 组成唯一键
+  version Int
+
+  title       String
+  excerpt     String @db.Text
+  contentJson Json
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, version])
+  @@index([postId, createdAt])
+  @@map("post_revisions")
+}
+
+/// 独立页面。当前范围内仅后台管理，不产出前台路由
+/// slug 需校验保留字黑名单（posts/admin/api/sitemap.xml 等），见 lib/seo/schema.ts 的 RESERVED_SLUGS
+model Page {
+  id      Int    @id @default(autoincrement())
+  slug    String @unique
+  title   String
+  excerpt String @db.Text
+
+  contentJson Json
+  contentHtml String? @db.Text
+
+  status      ContentStatus @default(DRAFT)
+  publishedAt DateTime?
+  deletedAt   DateTime?
+
+  authorId String?
+  author   User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seo SeoMeta?
+
+  @@index([status, deletedAt])
+  @@map("pages")
+}
+
+/// 分类，自引用成树。层级查询使用 PostgreSQL 递归 CTE（见 server/services/category.ts）
+model Category {
+  id          Int     @id @default(autoincrement())
+  name        String
+  slug        String  @unique
+  description String?
+
+  parentId Int?
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Category[] @relation("CategoryTree")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts Post[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Tag {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+  slug String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts PostTag[]
+
+  @@map("tags")
+}
+
+/// 文章与标签多对多的显式连接表
+model PostTag {
+  postId Int
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  tagId Int
+  tag   Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([tagId])
+  @@map("post_tags")
+}
+
+/// SEO 元信息。字段填写规范与校验规则见 lib/seo/schema.ts，两处必须保持一致
+///
+/// 一张表同时服务 Post 与 Page，用两个互斥的可空外键而非 targetType+targetId 弱关联：
+/// 这样能走 Prisma include（列表页避免 N+1）、能靠 onDelete 级联清理，也不必自己保证引用完整性。
+/// 约束：postId 与 pageId 必须恰有一个非空，由服务层保证（Prisma 无法表达这类 CHECK）。
+model SeoMeta {
+  id Int @id @default(autoincrement())
+
+  postId Int?  @unique
+  post   Post? @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  pageId Int?  @unique
+  page   Page? @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  /// 为空时前台回退到 Post.title
+  metaTitle       String?
+  /// 为空时前台回退到 Post.excerpt
+  metaDescription String?
+  /// 3-8 个：1 个主关键词 + 2-3 个次要 + 1-3 个长尾。PostgreSQL 原生数组
+  keywords        String[]
+
+  /// 为空时回退：正文首图 -> 站点默认图
+  ogImage       String?
+  /// 为空时继承 metaTitle
+  ogTitle       String?
+  /// 为空时继承 metaDescription
+  ogDescription String?
+
+  /// 默认留空，由系统按 /posts/{slug}-{id} 生成；仅内容同时发布在外站时才手填
+  canonicalUrl String?
+
+  robots RobotsDirective @default(INDEX_FOLLOW)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("seo_meta")
+}
+
+/// 媒体文件。原图落盘后由 sharp 转 WebP 并生成多尺寸，路径与宽高记录在 variants
+model Media {
+  id Int @id @default(autoincrement())
+
+  /// 存储层内的相对路径（如 2026/02/xxx.png），由 StorageProvider 解释
+  path         String  @unique
+  originalName String
+  mimeType     String
+  /// 字节数
+  size         Int
+  width        Int?
+  height       Int?
+
+  /// { webp: { path, width, height }, thumbnails: [{ width, path }] }
+  variants Json?
+
+  /// 图片 alt，SEO 用
+  alt String?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("media")
+}
