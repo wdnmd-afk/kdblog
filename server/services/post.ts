@@ -134,28 +134,6 @@ export async function getPostPreview(id: number) {
   });
 }
 
-/**
- * 前台文章列表。
- *
- * 与后台 listPosts 的区别：只返回已发布内容、按发布时间倒序（后台按更新时间），
- * 且不含 SEO 字段（列表页不需要，少查一张表）。
- */
-export async function listPublishedPosts(limit = 20) {
-  return prisma.post.findMany({
-    where: { ...notDeleted, status: ContentStatus.PUBLISHED },
-    orderBy: [{ publishedAt: "desc" }],
-    take: limit,
-    select: {
-      id: true,
-      slug: true,
-      title: true,
-      excerpt: true,
-      publishedAt: true,
-      category: { select: { id: true, name: true } },
-    },
-  });
-}
-
 /** sitemap 用：已发布文章的 id/slug/更新时间 */
 export async function listPublishedPostsForSitemap() {
   return prisma.post.findMany({

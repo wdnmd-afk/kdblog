@@ -8,11 +8,11 @@ import "dotenv/config";
  * HTTP：登录拿会话 → 打开三个管理页 → 断言 200 且 HTML 里没有崩溃标记，
  * 从而在「dev server 编译产物」这一层兜住那类问题。
  *
- * 前置：dev server 必须在 http://localhost:3000 运行。
+ * 前置：dev server 必须在 http://localhost:16673 运行。
  * 执行：pnpm test:http
  */
 
-const BASE = "http://localhost:3000";
+const BASE = "http://localhost:16673";
 
 let passed = 0;
 let failed = 0;
@@ -117,9 +117,12 @@ async function main() {
    *
    * 用无会话请求：带上管理员会话反而可能让某些「仅登录可见」的入口出现，
    * 掩盖真实的对外表现。
+   *
+   * 根路径不在这个列表里：前台已无文章列表页，/ 现在由 next.config.ts
+   * 重定向到 /admin（本身就是后台入口），因此单独断言它的跳转行为。
    */
   console.log("\n【前台不得出现后台入口】");
-  const publicPages = ["/", "/preview-error"] as const;
+  const publicPages = ["/preview-error"] as const;
   // href 到 /admin 或 /login 的两种形态：普通 HTML 与 RSC 载荷里的转义写法
   const adminLinkRe = /href=\\?"\/(admin|login)/;
 
@@ -129,6 +132,16 @@ async function main() {
     check(`${path} 可匿名访问`, res.status === 200, `status=${res.status}`);
     check(`${path} 不含通往后台的链接`, !adminLinkRe.test(html));
   }
+
+  console.log("\n【根路径重定向】");
+  // 不带 redirect: "follow"，要看到 307 本身而非最终落到登录页的 200
+  const rootRes = await fetch(`${BASE}/`, { redirect: "manual" });
+  check("根路径返回重定向", rootRes.status === 307 || rootRes.status === 308, `status=${rootRes.status}`);
+  check(
+    "根路径指向 /admin",
+    (rootRes.headers.get("location") ?? "").endsWith("/admin"),
+    `location=${rootRes.headers.get("location")}`
+  );
 
   console.log(`\n${"=".repeat(48)}`);
   console.log(`通过 ${passed} / ${passed + failed}`);

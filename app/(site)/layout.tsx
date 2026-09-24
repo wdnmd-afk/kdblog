@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 /**
  * 前台外壳。
  *
@@ -9,6 +7,10 @@ import Link from "next/link";
  *
  * 也因此这里不 import 后台的组件（AdminNav 等）：物理上不引用，
  * 就不会因为将来某次改动把后台入口带了进来。
+ *
+ * 这里只提供页脚，不含页头：前台当前只剩文章详情一个路由，
+ * 而文章页刻意不要页头（站名与文章标题会形成两级抬头），
+ * 因此没有必要再维护一个页头组件。
  *
  * 将来要把前台单独部署成站点时，把 (site) 目录整体搬走即可，
  * 后台那边不受影响。
@@ -27,17 +29,6 @@ const currentYear = new Date().getFullYear();
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-white">
-      <header className="border-b border-ink-200">
-        <div className="mx-auto flex max-w-2xl items-center px-5 py-6 sm:px-6">
-          <Link
-            href="/"
-            className="text-lg font-semibold tracking-tight text-ink-900 transition-colors hover:text-ink-700"
-          >
-            {siteName}
-          </Link>
-        </div>
-      </header>
-
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
 
       <footer className="border-t border-ink-200">

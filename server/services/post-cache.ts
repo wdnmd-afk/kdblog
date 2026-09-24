@@ -1,7 +1,7 @@
 import { cacheTag, cacheLife } from "next/cache";
 
 import { POST_TAG, POST_LIST_TAG } from "@/lib/url";
-import { getPublishedPost, listPublishedPosts, listPublishedPostsForSitemap } from "./post";
+import { getPublishedPost, listPublishedPostsForSitemap } from "./post";
 
 /**
  * 前台读取的缓存包装层。
@@ -36,18 +36,4 @@ export async function listPostsForSitemapCached() {
   cacheLife("max");
 
   return listPublishedPostsForSitemap();
-}
-
-/**
- * 前台文章列表（首页用）。
- *
- * 只打 POST_LIST_TAG：任何文章的发布/下架都会改变列表内容，
- * 因此不需要按单篇 id 精细区分。
- */
-export async function listPublishedPostsCached(limit = 20) {
-  "use cache";
-  cacheTag(POST_LIST_TAG);
-  cacheLife("max");
-
-  return listPublishedPosts(limit);
 }

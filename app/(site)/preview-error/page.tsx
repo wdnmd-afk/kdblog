@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { ArrowLeft, LinkIcon, Lock } from "lucide-react";
+import { LinkIcon, Lock } from "lucide-react";
 
 /**
  * 预览链接失效提示页。
@@ -12,8 +11,8 @@ import { ArrowLeft, LinkIcon, Lock } from "lucide-react";
  * 返回什么就是什么，所以失效时重定向到这里。
  *
  * 放在 (site) 分组内：这个地址是会被分享出去的（预览链接给未登录的人看），
- * 因此和前台页面一样，不出现任何通往管理后台的入口——拿到链接的人
- * 本来就没有后台权限，给一个点了会跳登录页的按钮只会让人困惑。
+ * 因此和前台页面一样，不出现任何通往管理后台的入口。也正因如此，这里不给
+ * 「返回首页」——根路径会跳到后台，给一个点了会跳登录页的按钮只会让人困惑。
  */
 
 /**
@@ -68,16 +67,6 @@ export default async function PreviewErrorPage({
       <h1 className="mt-5 text-2xl font-semibold tracking-tight text-ink-900">{title}</h1>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-500">{description}</p>
       <p className="mt-1.5 max-w-md text-sm leading-relaxed text-ink-400">{hint}</p>
-
-      <div className="mt-7">
-        <Link
-          href="/"
-          className="inline-flex h-9 items-center gap-1.5 rounded-panel border border-ink-300 bg-white px-3.5 text-sm text-ink-800 transition-colors hover:bg-ink-50"
-        >
-          <ArrowLeft size={15} />
-          返回首页
-        </Link>
-      </div>
     </main>
   );
 }

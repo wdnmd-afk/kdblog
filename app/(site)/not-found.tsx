@@ -1,15 +1,14 @@
-import Link from "next/link";
-import { ArrowLeft, FileQuestion } from "lucide-react";
+import { FileQuestion } from "lucide-react";
 
 /**
  * 前台 404。
  *
- * 放在 (site) 分组内，因此继承该分组的页头与页脚；
+ * 放在 (site) 分组内，因此继承该分组的页脚。
  * 未匹配到任何路由的请求由根级 app/not-found.tsx 兜底。
  *
- * 刻意不显示"搜索"或"最近文章"之类的补救入口：当前系统没有站内搜索，
- * 而把用户引向一堆文章不如直接给一条确定的退路（回首页）。
- * 同样地，这里也没有任何通往管理后台的链接。
+ * 刻意不给任何「退路」链接：前台只剩文章详情一个路由，没有可回的列表页，
+ * 而根路径会跳到后台——把拿到失效文章链接的读者引去登录页只会让人困惑。
+ * 同理也没有搜索或「最近文章」（系统本就没有站内搜索）。
  */
 export default function SiteNotFound() {
   return (
@@ -21,16 +20,6 @@ export default function SiteNotFound() {
       <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-500">
         这个地址没有对应的内容。可能是链接输错了，或者内容已经被删除。
       </p>
-
-      <div className="mt-7">
-        <Link
-          href="/"
-          className="inline-flex h-9 items-center gap-1.5 rounded-panel bg-ink-900 px-3.5 text-sm font-medium text-white transition-colors hover:bg-ink-800"
-        >
-          <ArrowLeft size={15} />
-          返回首页
-        </Link>
-      </div>
     </main>
   );
 }

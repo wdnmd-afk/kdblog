@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LogOut, Search } from "lucide-react";
 
@@ -113,15 +112,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <FeedbackProvider>
           {/* min-h-0 是编辑器能用 flex-1 撑满高度的前提 */}
           <main className="flex min-h-0 flex-1 flex-col px-5 py-5 lg:px-7">{children}</main>
-
-          <footer className="flex-none px-5 pb-4 text-center text-[11px] text-ink-400 lg:px-7">
-            <Link
-              href="/"
-              className="rounded-panel transition-colors hover:text-ink-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500/35"
-            >
-              访问站点
-            </Link>
-          </footer>
         </FeedbackProvider>
       </div>
     </div>

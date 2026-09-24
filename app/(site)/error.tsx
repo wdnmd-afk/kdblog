@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 
 /**
@@ -10,8 +9,9 @@ import { AlertTriangle, RotateCcw } from "lucide-react";
  * 用 Tailwind 类但不复用 components/ui：错误可能源自某个共享组件，
  * 多引一层依赖会把风险带进错误页自身。视觉上与全站保持一致。
  *
- * 页头与页脚由 (site)/layout.tsx 提供——错误边界渲染在布局内部，
- * 这里再画一遍页头会重复。同样地，这里不出现任何管理后台的入口。
+ * 页脚由 (site)/layout.tsx 提供。
+ * 只留「重试」这一个动作：前台没有可回的列表页，根路径又是后台，
+ * 再放一个「返回首页」只会把读者送去登录页。
  */
 export default function SiteError({
   error,
@@ -47,12 +47,6 @@ export default function SiteError({
           <RotateCcw size={15} />
           重试
         </button>
-        <Link
-          href="/"
-          className="inline-flex h-9 items-center rounded-panel border border-ink-300 bg-white px-3.5 text-sm text-ink-800 transition-colors hover:bg-ink-50"
-        >
-          返回首页
-        </Link>
       </div>
     </main>
   );

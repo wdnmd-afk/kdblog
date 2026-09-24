@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { ArrowLeft, FileQuestion } from "lucide-react";
+import { FileQuestion } from "lucide-react";
 
 /**
  * 根级 404 兜底。
@@ -10,18 +9,18 @@ import { ArrowLeft, FileQuestion } from "lucide-react";
  *
  * 不套用后台侧栏：访问一个不存在的地址时，用户未必处于登录态，
  * 渲染鉴权相关的导航只会产生一次多余的跳转。
+ *
+ * 站名只作为文字标题，不做成链接：前台已无列表页，而根路径会跳到后台，
+ * 点站名等于把访客送进登录页。同理这里也没有「返回首页」。
  */
 export default function NotFound() {
   return (
     <div className="flex min-h-screen flex-col bg-white">
       <header className="border-b border-ink-200">
         <div className="mx-auto flex max-w-2xl items-center px-5 py-6 sm:px-6">
-          <Link
-            href="/"
-            className="text-lg font-semibold tracking-tight text-ink-900"
-          >
+          <span className="text-lg font-semibold tracking-tight text-ink-900">
             {process.env.NEXT_PUBLIC_SITE_NAME ?? "kdblog"}
-          </Link>
+          </span>
         </div>
       </header>
 
@@ -31,18 +30,8 @@ export default function NotFound() {
           页面不存在
         </h1>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-500">
-          这个地址没有对应的内容。检查一下链接是否完整，或者回到首页重新找。
+          这个地址没有对应的内容。检查一下链接是否完整。
         </p>
-
-        <div className="mt-7">
-          <Link
-            href="/"
-            className="inline-flex h-9 items-center gap-1.5 rounded-panel bg-ink-900 px-3.5 text-sm font-medium text-white transition-colors hover:bg-ink-800"
-          >
-            <ArrowLeft size={15} />
-            返回首页
-          </Link>
-        </div>
       </main>
     </div>
   );
