@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 16673",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 16673",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
@@ -15,7 +15,9 @@
     "db:studio": "prisma studio",
     "test": "tsx scripts/test-features.ts",
     "test:smoke": "tsx scripts/smoke-test.ts",
-    "test:http": "tsx scripts/test-http.ts"
+    "test:http": "tsx scripts/test-http.ts",
+    "test:markdown": "tsx scripts/test-markdown.ts",
+    "test:markdown:http": "tsx scripts/test-markdown-http.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
@@ -42,6 +44,7 @@
     "argon2": "^0.45.1",
     "lowlight": "3.3.0",
     "lucide-react": "^1.46.0",
+    "marked": "18.0.14",
     "next": "16.3.5",
     "next-auth": "5.0.0-beta.32",
     "pg": "^8.23.0",
@@ -51,6 +54,8 @@
     "sanitize-html": "^2.17.7",
     "sharp": "^0.35.4",
     "slugify": "^1.6.9",
+    "turndown": "7.2.4",
+    "turndown-plugin-gfm": "1.0.2",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -61,6 +66,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/sanitize-html": "^2.16.1",
+    "@types/turndown": "5.0.6",
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",

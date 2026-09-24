@@ -9,7 +9,9 @@ import {
   ArrowLeft,
   Check,
   CloudUpload,
+  Download,
   Eye,
+  FileUp,
   History,
   Settings2,
 } from "lucide-react";
@@ -40,6 +42,7 @@ import {
   saveDraftAction,
 } from "@/server/actions/post";
 
+import { ImportMarkdownModal, type MarkdownImportPayload } from "./ImportMarkdownModal";
 import { RevisionsModal, type RevisionItem } from "./RevisionsModal";
 import { SettingsDrawer } from "./SettingsDrawer";
 
@@ -102,6 +105,7 @@ export function PostEditor({
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [revisionsOpen, setRevisionsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   /**
    * 预览链接单独用 state 而非 toast：链接需要被选中复制，
    * 自动消失的提示做不到这件事。
@@ -477,6 +481,115 @@ export function PostEditor({
   }
 
   // -------------------------------------------------------------------------
+  // Markdown 导入导出
+  // -------------------------------------------------------------------------
+
+  /**
+   * 把解析好的 Markdown 灌进编辑器。
+   *
+   * 导入会**整体替换**正文，因此在编辑器已有内容时先确认一次。
+   * 空白新建页不问——那里没有可丢的东西，多一次确认纯属干扰。
+   *
+   * 元信息是否套用由对话框里的勾选决定，这里只负责落地：meta 为 null
+   * 表示用户选择只要正文。已填写的字段不覆盖，理由见下方各处注释。
+   */
+  async function handleImport(payload: MarkdownImportPayload) {
+    if (!editor) return;
+
+    if (!editor.isEmpty) {
+      const ok = await confirm({
+        title: "导入会替换当前正文",
+        description:
+          "编辑器里已有内容，导入后会被整篇替换（标题与设置不受影响）。确认继续吗？",
+        confirmLabel: "替换",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+
+    /*
+     * emitUpdate 保持默认（true）：这是一次用户主动发起的内容变更，
+     * 应当触发本地草稿写入。与版本回滚那里传 false 的理由正相反——
+     * 回滚后紧接着要人工确认再发布，不该被记成「有待保存的修改」。
+     */
+    editor.commands.setContent(payload.contentJson as object);
+
+    if (payload.meta) {
+      const { meta } = payload;
+      // 标题为空才填：用户可能已经敲好标题，只是想导入正文
+      if (meta.title && !title.trim()) setTitle(meta.title);
+      if (meta.excerpt && !excerpt.trim()) setExcerpt(meta.excerpt);
+      // slug 额外过一遍 slugify：frontmatter 里的 slug 可能带大写或中文，
+      // 直接填进去会在保存时被 slugSchema 拒掉，而错误提示离这次导入很远
+      if (meta.slug && !slug.trim()) {
+        const normalized = slugify(meta.slug);
+        if (normalized) setSlug(normalized);
+      }
+      // 关键词只在 SEO 那栏还空着时套用，不与已填的合并——
+      // 合并会把数量推过 seoPublishSchema 的 8 个上限，且顺序含义（首项为主关键词）会乱
+      if (meta.keywords.length > 0 && seo.keywords.length === 0) {
+        setSeo({ ...seo, keywords: meta.keywords.slice(0, 8) });
+      }
+      /*
+       * frontmatter 的 tags 刻意不自动建标签。
+       *
+       * 它们只是字符串，要变成文章标签得走 newTagNames 让服务层 upsert——
+       * 而一个批量导入就可能凭空造出十几个标签，清理起来很麻烦。
+       * 这里只提示有哪些，由用户在设置抽屉里自行决定。
+       */
+      if (meta.tags.length > 0) {
+        toast(`文件里有标签：${meta.tags.join("、")}，可在设置里手动添加`, "info");
+      }
+    }
+
+    setImportOpen(false);
+    schedule();
+    setLocalSavedAt(new Date().toISOString());
+    toast("已导入到编辑器，确认无误后记得保存", "success");
+  }
+
+  /**
+   * 导出为 .md 文件。
+   *
+   * 走 Route Handler 而非 Server Action：下载需要 Content-Disposition 响应头，
+   * 而 action 只能返回可序列化的值。
+   *
+   * 导出的是**库里已保存的内容**，不是编辑器里的当前状态。因此有未保存改动时
+   * 先提醒一次，否则用户会拿到一份缺了最新修改的文件却无从察觉。
+   */
+  async function handleExport() {
+    if (!post.id) return;
+
+    if (localSavedAt) {
+      const ok = await confirm({
+        title: "有未保存的修改",
+        description:
+          "导出的是服务器上已保存的版本，编辑器里尚未保存的改动不会包含在内。要继续导出吗？",
+        confirmLabel: "仍要导出",
+        cancelLabel: "先去保存",
+      });
+      if (!ok) return;
+    }
+
+    /*
+     * 用程序化的 <a download> 触发下载。
+     *
+     * 不用 location.assign：那是「导航」语义，Next 的 lint 规则会警告，
+     * 而这里根本不想离开当前页——响应带 Content-Disposition: attachment，
+     * 浏览器只会存文件。也不用 window.open，它会被弹窗拦截器挡掉。
+     *
+     * download 属性留空：文件名由响应头的 filename 决定（那边按标题与 slug
+     * 生成），写在这里等于把命名规则复制一份到前端，两处迟早会不一致。
+     */
+    const link = document.createElement("a");
+    link.href = `/api/posts/${post.id}/export`;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  // -------------------------------------------------------------------------
   // 渲染
   // -------------------------------------------------------------------------
 
@@ -525,6 +638,21 @@ export function PostEditor({
             <Button size="sm" onClick={handlePreview} disabled={pending}>
               <Eye size={14} />
               <span className="hidden lg:inline">预览</span>
+            </Button>
+          )}
+
+          {/* 导入放在「查看类」这一侧：它虽然会改内容，但紧接着有预览与二次确认，
+              不像存草稿/发布那样一点就落库 */}
+          <Button size="sm" onClick={() => setImportOpen(true)} disabled={pending}>
+            <FileUp size={14} />
+            <span className="hidden lg:inline">导入 MD</span>
+          </Button>
+
+          {/* 导出只对已保存的文章有意义：新建页还没有 id，导不出任何东西 */}
+          {!isNew && (
+            <Button size="sm" onClick={handleExport} disabled={pending}>
+              <Download size={14} />
+              <span className="hidden lg:inline">导出 MD</span>
             </Button>
           )}
 
@@ -677,6 +805,12 @@ export function PostEditor({
         revisions={revisions}
         onRevert={handleRevert}
         pending={pending}
+      />
+
+      <ImportMarkdownModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImport={handleImport}
       />
     </div>
   );

@@ -47,3 +47,6 @@ next-env.d.ts
 
 # runtime logs
 /logs/
+
+# 测试脚本的临时产物（导出的 .md 等），不入库
+/tmp/
