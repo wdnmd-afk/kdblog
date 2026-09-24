@@ -13,7 +13,7 @@ import { join } from "node:path";
  * 目录从命令行传入而不写死在代码里——个人机器上的路径不该进仓库。
  */
 
-const BASE = "http://localhost:3000";
+const BASE = "http://localhost:16673";
 
 const DIR = process.argv[2];
 if (!DIR) {

@@ -43,7 +43,7 @@ RUN apk add --no-cache libc6-compat
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
+ENV PORT=16673
 ENV HOSTNAME=0.0.0.0
 # 上传目录由 volume 挂载，容器重建后文件不丢
 ENV UPLOAD_DIR=/app/uploads
@@ -64,6 +64,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modul
 RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app/uploads
 
 USER nextjs
-EXPOSE 3000
+EXPOSE 16673
 
 CMD ["node", "server.js"]

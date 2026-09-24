@@ -13,7 +13,7 @@ import { join } from "node:path";
  * 执行：pnpm tsx scripts/measure-tasklist.ts [url]
  */
 
-const URL_ = process.argv[2] ?? "http://localhost:3000/posts/agent-engineering-paths-32";
+const URL_ = process.argv[2] ?? "http://localhost:16673/posts/agent-engineering-paths-32";
 const PORT = 9333;
 
 const CHROME_CANDIDATES = [
