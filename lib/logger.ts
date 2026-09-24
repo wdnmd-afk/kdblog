@@ -138,6 +138,8 @@ export interface ReadLogsOptions {
   limit?: number;
   /** 只保留某个级别 */
   level?: LogLevel;
+  /** 只保留这个时刻之后的条目，用于「近 24 小时」这类窗口统计 */
+  since?: Date;
 }
 
 /** 可选的日期列表，供日志页面做筛选 */
@@ -159,7 +161,7 @@ export function listLogDays(): string[] {
  * 且单行损坏不会让整个文件无法解析——解析失败的行直接跳过。
  */
 export function readLogs(options: ReadLogsOptions = {}): LogEntry[] {
-  const { day, limit = 200, level } = options;
+  const { day, limit = Number.POSITIVE_INFINITY, level, since } = options;
   const days = day ? [day] : listLogDays();
   const entries: LogEntry[] = [];
 
@@ -175,6 +177,8 @@ export function readLogs(options: ReadLogsOptions = {}): LogEntry[] {
       try {
         const entry = JSON.parse(line) as LogEntry;
         if (level && entry.level !== level) continue;
+        // 时间戳是 ISO 字符串，字典序即时间序，不必 parse 成 Date
+        if (since && entry.time < since.toISOString()) continue;
         entries.push(entry);
       } catch {
         // 跳过写坏的行

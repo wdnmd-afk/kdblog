@@ -44,3 +44,17 @@ export async function listSystemLogs(query: SystemLogQuery = {}): Promise<System
 
   return { entries, days, day };
 }
+
+/**
+ * 统计时间窗口内的错误条数，供仪表盘的「待处理」使用。
+ *
+ * 不放行全站直连 lib/logger 的例外：日志的筛选口径属于业务约定，
+ * 仪表盘和日志页看同一份数据时不能用两套规则。
+ *
+ * 不传 limit：这里要的是精确条数，截断到 200 会把「今天报了 300 次错」
+ * 说成「200 次」，恰好把最需要被看见的情况抹平。
+ */
+export function countRecentErrors(hours = 24): number {
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+  return readLogs({ level: "error", since }).length;
+}
