@@ -76,7 +76,7 @@ export async function insertImages(
   for (const file of files) {
     const result = await uploadImage(file);
     if (!result.ok) {
-      onError(result.error);
+      onError(result.msg);
       continue;
     }
 

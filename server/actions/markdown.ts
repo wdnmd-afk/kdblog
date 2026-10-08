@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { JSONContent } from "@tiptap/core";
 
 import { requireAdmin } from "@/lib/auth";
+import { toPlainJson } from "@/lib/json";
 import { logError } from "@/lib/logger";
 import { MARKDOWN_MAX_BYTES, splitFrontmatter } from "@/lib/markdown";
 import { parseMarkdownBody } from "@/lib/markdown/server";
@@ -70,25 +71,24 @@ export interface MarkdownImportResult {
 export async function parseMarkdownAction(
   input: unknown
 ): Promise<ActionResult<MarkdownImportResult>> {
-  await requireAdmin();
-
-  const parsed = importSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "内容不合法" };
-  }
-
-  const { raw } = parsed.data;
-
-  // 服务端复查体积：客户端的校验可以被绕过（直接调 action）
-  const bytes = Buffer.byteLength(raw, "utf8");
-  if (bytes > MARKDOWN_MAX_BYTES) {
-    return {
-      ok: false,
-      error: `文件超过 ${Math.round(MARKDOWN_MAX_BYTES / 1024 / 1024)}MB 上限`,
-    };
-  }
-
+  let bytes: number | undefined;
   try {
+    await requireAdmin();
+    const parsed = importSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, msg: parsed.error.issues[0]?.message ?? "内容不合法" };
+    }
+
+    const { raw } = parsed.data;
+    // 服务端复查体积：客户端的校验可以被绕过（直接调 action）
+    bytes = Buffer.byteLength(raw, "utf8");
+    if (bytes > MARKDOWN_MAX_BYTES) {
+      return {
+        ok: false,
+        msg: `文件超过 ${Math.round(MARKDOWN_MAX_BYTES / 1024 / 1024)}MB 上限，请精简后重试。`,
+      };
+    }
+
     const { frontmatter, body } = splitFrontmatter(raw);
     const result = parseMarkdownBody(body);
 
@@ -101,14 +101,35 @@ export async function parseMarkdownAction(
     if (result.blockCount === 0 || result.charCount === 0) {
       return {
         ok: false,
-        error: "解析后正文为空，请确认文件内容是有效的 Markdown",
+        msg: "解析后正文为空，请确认文件内容是有效的 Markdown",
       };
     }
 
     return {
       ok: true,
+      msg: "Markdown 解析成功，请确认导入内容。",
       data: {
-        contentJson: result.contentJson,
+        /*
+         * 必须经 toPlainJson 归一后再返回。
+         *
+         * generateJSON 的产物里，每个节点的 attrs 都是 prosemirror 用
+         * Object.create(null) 建的**无原型对象**，而这里是把整份文档作为
+         * Server Action 的**返回值**发给客户端组件。React 的 Flight
+         * 序列化器判断「纯对象」时要求原型是 Object.prototype，遇到无原型
+         * 对象直接抛：
+         *
+         *   Only plain objects, and a few built-ins, can be passed to Client
+         *   Components from Server Components.
+         *
+         * 抛在序列化阶段，前端 catch 不到，只能落到 (admin)/error.tsx
+         * 那个「操作没能完成」的错误边界上，且只给一个 digest。
+         *
+         * 注意这与入参方向的 lib/json.ts 是同一个坑的两面：那边是
+         * 编辑器把正文发给 action 前归一，这边是 action 把正文发回客户端前归一。
+         * 只要文件里有任意带 attrs 的节点（标题、段落都有 textAlign）就会踩中，
+         * 实测 docs/本地开发环境.md 解析后有 127 处无原型对象。
+         */
+        contentJson: toPlainJson(result.contentJson),
         previewHtml: result.previewHtml,
         charCount: result.charCount,
         blockCount: result.blockCount,
@@ -135,7 +156,7 @@ export async function parseMarkdownAction(
     };
   } catch (error) {
     logError(error, "parseMarkdownAction", { bytes });
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 

@@ -137,7 +137,7 @@ export default function CategoryManager({ tree, flat }: Props) {
         setError(
           result.fieldErrors
             ? Object.values(result.fieldErrors).flat().join("；")
-            : result.error
+            : result.msg
         );
         return;
       }
@@ -172,7 +172,7 @@ export default function CategoryManager({ tree, flat }: Props) {
         toast(`分类「${node.name}」已删除`, "success");
         router.refresh();
       } else {
-        toast(result.error, "error");
+        toast(result.msg, "error");
       }
     });
   }

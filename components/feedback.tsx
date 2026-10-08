@@ -90,42 +90,39 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
   // 自增 id 用 ref 而非 state：它只是身份标记，变化不需要触发渲染
   const nextId = useRef(1);
-  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
   const dismiss = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-    const timer = timers.current.get(id);
-    if (timer) {
-      clearTimeout(timer);
-      timers.current.delete(id);
-    }
   }, []);
 
-  const toast = useCallback(
-    (message: string, tone: ToastTone = "success") => {
-      const id = nextId.current++;
-      setToasts((prev) => [...prev, { id, tone, message }]);
-      timers.current.set(
-        id,
-        setTimeout(() => dismiss(id), TOAST_DURATION[tone])
-      );
-    },
-    [dismiss]
-  );
+  /**
+   * 只把 toast 放进队列，**不在这里起自动消失的定时器**。
+   *
+   * 计时改由 ToastCard 挂载后开始，这是本次修 bug 的关键。业务侧的调用
+   * 几乎都长这样：
+   *
+   *     startTransition(async () => {
+   *       const result = await action();
+   *       toast("已取消发布", "success");
+   *       router.refresh();        // 与上面的 toast 在同一个 transition 里
+   *     });
+   *
+   * router.refresh() 会让整个 transition 挂起到新的 RSC 树到达才提交，而
+   * toast 的 setState 也在同一个 transition 中。若在这里就起表，倒计时会在
+   * toast 还没被渲染出哪怕一帧时就跑完，把它从队列里删掉——表现就是
+   * 「操作明明成功了，屏幕上却什么提示都没有」，且冷编译或慢查询时必现。
+   *
+   * 挂载后才起表，无论 transition 挂起多久，提示都能完整显示设定的时长。
+   */
+  const toast = useCallback((message: string, tone: ToastTone = "success") => {
+    const id = nextId.current++;
+    setToasts((prev) => [...prev, { id, tone, message }]);
+  }, []);
 
   const confirm = useCallback((options: ConfirmOptions) => {
     return new Promise<boolean>((resolve) => {
       setConfirmState({ ...options, resolve });
     });
-  }, []);
-
-  // 卸载时清掉未触发的定时器，避免对已卸载组件 setState
-  useEffect(() => {
-    const map = timers.current;
-    return () => {
-      map.forEach(clearTimeout);
-      map.clear();
-    };
   }, []);
 
   const api = useMemo<FeedbackApi>(() => ({ toast, confirm }), [toast, confirm]);
@@ -173,46 +170,77 @@ function ToastViewport({
     /**
      * aria-live="polite" 让读屏软件在当前朗读结束后播报，不打断用户操作；
      * 用 assertive 会打断输入，反馈类信息不值得这么强的优先级。
+     *
+     * z-toast 用具名 token 而非裸 z-50：层级关系集中在 globals.css 可读，
+     * 且提示必须盖在抽屉与弹窗（z-modal）之上——在设置抽屉里触发的错误
+     * 若被抽屉挡住，等于没提示。
      */
     <div
       aria-live="polite"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-toast flex flex-col items-center gap-2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
     >
-      {toasts.map((item) => {
-        const Icon = TOAST_ICONS[item.tone];
-        return (
-          <div
-            key={item.id}
-            role="status"
-            className={cx(
-              "pointer-events-auto flex w-full max-w-md items-start gap-2.5 rounded-panel px-3.5 py-2.5 text-sm shadow-panel",
-              // 全站无彩色，成功/错误靠填充深浅区分：错误用实心反白强调
-              item.tone === "error"
-                ? "bg-ink-900 text-white"
-                : "border border-ink-200 bg-white text-ink-800"
-            )}
-          >
-            <Icon
-              size={16}
-              className={cx("mt-0.5 shrink-0", item.tone === "error" ? "text-white" : "text-ink-500")}
-            />
-            <p className="min-w-0 flex-1 leading-relaxed">{item.message}</p>
-            <button
-              type="button"
-              onClick={() => onDismiss(item.id)}
-              aria-label="关闭提示"
-              className={cx(
-                "-mr-1 -mt-0.5 shrink-0 rounded p-1 transition-colors",
-                item.tone === "error"
-                  ? "text-white/60 hover:bg-white/10 hover:text-white"
-                  : "text-ink-400 hover:bg-ink-100 hover:text-ink-900"
-              )}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        );
-      })}
+      {toasts.map((item) => (
+        <ToastCard key={item.id} item={item} onDismiss={onDismiss} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 单条提示。
+ *
+ * 独立成组件只为一件事：让自动消失的计时从**挂载后**开始，而不是从
+ * toast() 被调用时开始。原因见 FeedbackProvider.toast 的说明——调用点
+ * 普遍身处一个会被 router.refresh() 挂起的 transition 中，在那里起表
+ * 会让提示在首次绘制前就被删掉。
+ */
+function ToastCard({
+  item,
+  onDismiss,
+}: {
+  item: ToastItem;
+  onDismiss: (id: number) => void;
+}) {
+  useEffect(() => {
+    const timer = setTimeout(() => onDismiss(item.id), TOAST_DURATION[item.tone]);
+    return () => clearTimeout(timer);
+    // item.id 唯一标识一条提示，tone 与 message 不会在其生命周期内变化，
+    // 因此这个表只在挂载时起一次
+  }, [item.id, item.tone, onDismiss]);
+
+  const Icon = TOAST_ICONS[item.tone];
+
+  return (
+    <div
+      role="status"
+      className={cx(
+        "pointer-events-auto flex w-full max-w-md items-start gap-2.5 rounded-panel px-3.5 py-2.5 text-sm shadow-panel",
+        // 进场动画顺带确认「提示真的出现了」，这在快速连续操作时尤其有用
+        "animate-fade-in",
+        // 全站无彩色，成功/错误靠填充深浅区分：错误用实心反白强调
+        item.tone === "error"
+          ? "bg-ink-900 text-white"
+          : "border border-ink-200 bg-white text-ink-800"
+      )}
+    >
+      <Icon
+        size={16}
+        className={cx("mt-0.5 shrink-0", item.tone === "error" ? "text-white" : "text-ink-500")}
+      />
+      <p className="min-w-0 flex-1 leading-relaxed">{item.message}</p>
+      <button
+        type="button"
+        onClick={() => onDismiss(item.id)}
+        aria-label="关闭提示"
+        className={cx(
+          "-mr-1 -mt-0.5 shrink-0 cursor-pointer rounded p-1 transition-colors",
+          item.tone === "error"
+            ? "text-white/60 hover:bg-white/10 hover:text-white"
+            : "text-ink-400 hover:bg-ink-100 hover:text-ink-900"
+        )}
+      >
+        <X size={14} />
+      </button>
     </div>
   );
 }

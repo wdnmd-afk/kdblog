@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { AlertCircle, ExternalLink, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 
 import {
   publishPostsInBatchAction,
   trashPostsInBatchAction,
   unpublishPostsInBatchAction,
+  type BatchActionResult,
 } from "@/server/actions/post";
 import { Badge, Button, cx, type BadgeTone } from "@/components/ui";
 import { useFeedback } from "@/components/feedback";
@@ -60,7 +61,7 @@ export function PostBulkTable({ rows }: { rows: PostRow[] }) {
    * 用户再点一次会对着不存在的目标操作。
    */
   async function run(
-    action: (ids: number[]) => Promise<{ ok: boolean; message: string }>,
+    action: (ids: number[]) => Promise<BatchActionResult>,
     confirmOptions?: { title: string; description?: string; confirmLabel?: string }
   ) {
     if (confirmOptions) {
@@ -70,9 +71,9 @@ export function PostBulkTable({ rows }: { rows: PostRow[] }) {
 
     startTransition(async () => {
       const result = await action(selected);
-      // 批量发布可能部分成功（SEO 不全的被跳过），message 里带了明细，
+      // 批量发布可能部分成功（SEO 不全的被跳过），msg 里带了明细，
       // 因此即使 ok 也要展示出来，不能只在失败时提示
-      toast(result.message, result.ok ? "success" : "error");
+      toast(result.msg, result.ok ? "success" : "error");
       if (result.ok) {
         setSelected([]);
         router.refresh();
@@ -180,25 +181,16 @@ export function PostBulkTable({ rows }: { rows: PostRow[] }) {
                       aria-label={`选择「${row.title}」`}
                     />
                   </td>
+                  {/* 标题只是标题。「在新标签查看」已挪到操作列——它是一个动作，
+                      混在标题旁边既要靠悬停才浮现（发现不了），又让标题的可点区域
+                      旁边多出一个语义不同的链接，误点会离开当前页 */}
                   <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-1.5">
-                      <Link
-                        href={`/admin/posts/${row.id}`}
-                        className="max-w-[24rem] truncate font-medium text-ink-900 transition-colors hover:text-accent-600"
-                      >
-                        {row.title}
-                      </Link>
-                      {row.published && (
-                        <Link
-                          href={row.path}
-                          target="_blank"
-                          aria-label="在新标签查看"
-                          className="shrink-0 rounded-panel p-0.5 text-ink-400 opacity-0 transition-all hover:bg-ink-100 hover:text-ink-700 focus-visible:opacity-100 group-hover:opacity-100"
-                        >
-                          <ExternalLink size={13} />
-                        </Link>
-                      )}
-                    </div>
+                    <Link
+                      href={`/admin/posts/${row.id}`}
+                      className="block max-w-[24rem] truncate font-medium text-ink-900 transition-colors hover:text-accent-600"
+                    >
+                      {row.title}
+                    </Link>
                   </td>
                   <td className="px-3 py-2.5 text-ink-500">{row.categoryName ?? "—"}</td>
                   <td className="px-3 py-2.5">
@@ -220,7 +212,15 @@ export function PostBulkTable({ rows }: { rows: PostRow[] }) {
                     {row.updatedAt}
                   </td>
                   <td className="py-2.5 pl-3 pr-4 text-right">
-                    <PostRowActions id={row.id} published={row.published} />
+                    {/* 传标题进去：导出按钮的 aria-label 要靠它区分是哪一篇，
+                        删除确认的文案也因此从「该文章」变成具体标题。
+                        path 供操作栏里的「在新标签查看」使用，草稿行不渲染该按钮 */}
+                    <PostRowActions
+                      id={row.id}
+                      published={row.published}
+                      title={row.title}
+                      path={row.path}
+                    />
                   </td>
                 </tr>
               );

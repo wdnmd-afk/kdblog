@@ -3,6 +3,8 @@ import { AuthError } from "next-auth";
 import { AlertCircle, User } from "lucide-react";
 
 import { auth, signIn } from "@/lib/auth";
+import { loginErrorMessage, resolveLoginError } from "@/lib/errors";
+import { logError } from "@/lib/logger";
 import { Button, Card } from "@/components/ui";
 import { PasswordInput } from "./PasswordInput";
 
@@ -33,6 +35,7 @@ export default async function LoginPage({
   }
 
   const { error, redirectTo } = await searchParams;
+  const errorMessage = loginErrorMessage(error);
 
   async function loginAction(formData: FormData) {
     "use server";
@@ -46,7 +49,11 @@ export default async function LoginPage({
     } catch (err) {
       // signIn 成功时会抛出 NEXT_REDIRECT，必须原样放行，否则跳转会被吞掉
       if (err instanceof AuthError) {
-        redirect(`/login?error=1${target ? `&redirectTo=${encodeURIComponent(target)}` : ""}`);
+        const failure = resolveLoginError(err);
+        if (failure.status >= 500) {
+          logError(err.cause?.err ?? err, "loginAction");
+        }
+        redirect(`/login?error=${failure.code}${target ? `&redirectTo=${encodeURIComponent(target)}` : ""}`);
       }
       throw err;
     }
@@ -60,10 +67,10 @@ export default async function LoginPage({
           <p className="mt-1.5 text-xs text-ink-500">请使用你的用户名登录</p>
         </div>
 
-        {error ? (
-          <p className="mb-4 flex items-start gap-2 rounded-panel border border-ink-300 bg-ink-50 px-3 py-2 text-xs text-ink-900">
+        {errorMessage ? (
+          <p role="alert" className="mb-4 flex items-start gap-2 rounded-panel border border-ink-300 bg-ink-50 px-3 py-2 text-xs text-ink-900">
             <AlertCircle size={14} className="mt-0.5 shrink-0" />
-            账号或密码不正确
+            {errorMessage}
           </p>
         ) : null}
 

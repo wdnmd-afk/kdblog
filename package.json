@@ -17,7 +17,8 @@
     "test:smoke": "tsx scripts/smoke-test.ts",
     "test:http": "tsx scripts/test-http.ts",
     "test:markdown": "tsx scripts/test-markdown.ts",
-    "test:markdown:http": "tsx scripts/test-markdown-http.ts"
+    "test:markdown:http": "tsx scripts/test-markdown-http.ts",
+    "test:errors": "tsx scripts/test-errors.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

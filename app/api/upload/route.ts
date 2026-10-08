@@ -1,8 +1,19 @@
 import { NextResponse } from "next/server";
-import sharp from "sharp";
+/**
+ * Metadata 走具名类型导入。
+ *
+ * sharp 的类型是 `export = sharp` 加 `declare namespace sharp`，在
+ * esModuleInterop 下默认导入只拿到**值**，`sharp` 这个名字不作为类型命名空间
+ * 存在——写 `sharp.Metadata` 会报 TS2503「Cannot find namespace」。
+ * 具名导入直接取到命名空间成员，不依赖 interop 的细节。
+ */
+import sharp, { type Metadata } from "sharp";
 
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { publicError, toPublicError } from "@/lib/errors";
+import { errorResponse } from "@/lib/http-error";
+import { logError } from "@/lib/logger";
 import { getStorage } from "@/lib/storage";
 
 /**
@@ -26,91 +37,97 @@ const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gi
 export async function POST(request: Request) {
   try {
     await requireAdmin();
-  } catch {
-    return NextResponse.json({ error: "未授权" }, { status: 401 });
-  }
 
-  const formData = await request.formData();
-  const file = formData.get("file");
-
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "缺少文件" }, { status: 400 });
-  }
-
-  if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "文件超过 10MB 上限" }, { status: 400 });
-  }
-
-  if (!ALLOWED_MIME.has(file.type)) {
-    return NextResponse.json({ error: "仅支持 JPEG / PNG / WebP / GIF" }, { status: 400 });
-  }
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const storage = await getStorage();
-
-  // 按年月分目录，避免单目录下文件过多影响文件系统性能
-  const now = new Date();
-  const dir = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const stem = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-
-  const image = sharp(buffer);
-  const meta = await image.metadata();
-  const ext = extensionFor(file.type);
-
-  // 原图先落盘，后续派生失败也不至于丢原始文件
-  const originalKey = `${dir}/${stem}.${ext}`;
-  await storage.put({ key: originalKey, body: buffer, contentType: file.type });
-
-  // GIF 不做 WebP 与缩略图转换：动图转静态会丢失动画，得不偿失
-  const isAnimated = file.type === "image/gif";
-
-  let webpVariant: { path: string; width: number; height: number } | null = null;
-  const thumbnails: Array<{ width: number; path: string }> = [];
-
-  if (!isAnimated) {
-    const webpBuffer = await sharp(buffer).webp({ quality: 82 }).toBuffer();
-    const webpKey = `${dir}/${stem}.webp`;
-    await storage.put({ key: webpKey, body: webpBuffer, contentType: "image/webp" });
-    webpVariant = {
-      path: webpKey,
-      width: meta.width ?? 0,
-      height: meta.height ?? 0,
-    };
-
-    // 只生成比原图更小的档位，放大无意义且浪费空间
-    for (const width of THUMBNAIL_WIDTHS) {
-      if (meta.width && meta.width <= width) continue;
-      const thumbBuffer = await sharp(buffer)
-        .resize({ width, withoutEnlargement: true })
-        .webp({ quality: 78 })
-        .toBuffer();
-      const thumbKey = `${dir}/${stem}-${width}.webp`;
-      await storage.put({ key: thumbKey, body: thumbBuffer, contentType: "image/webp" });
-      thumbnails.push({ width, path: thumbKey });
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return errorResponse(publicError("VALIDATION_ERROR", "上传内容无法读取，请重新选择图片后重试。"));
     }
-  }
+    const file = formData.get("file");
 
-  const media = await prisma.media.create({
-    data: {
-      path: originalKey,
-      originalName: file.name,
-      mimeType: file.type,
-      size: file.size,
+    if (!(file instanceof File) || file.size === 0) {
+      return errorResponse(publicError("VALIDATION_ERROR", "请选择一张非空图片后上传。"));
+    }
+    if (file.size > MAX_BYTES) {
+      return errorResponse(publicError("FILE_TOO_LARGE", "图片超过 10MB，请压缩或选择较小的图片。"));
+    }
+    if (!ALLOWED_MIME.has(file.type)) {
+      return errorResponse(publicError("UNSUPPORTED_FILE_TYPE", "仅支持 JPEG、PNG、WebP 和 GIF 图片，请更换文件。"));
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    let meta: Metadata;
+    try {
+      meta = await sharp(buffer).metadata();
+    } catch {
+      return errorResponse(publicError("INVALID_IMAGE"));
+    }
+
+    const storage = await getStorage();
+    // 按年月分目录，避免单目录下文件过多影响文件系统性能
+    const now = new Date();
+    const dir = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const stem = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const ext = extensionFor(file.type);
+
+    // 原图先落盘，后续派生失败也不至于丢原始文件
+    const originalKey = `${dir}/${stem}.${ext}`;
+    await storage.put({ key: originalKey, body: buffer, contentType: file.type });
+
+    // GIF 不做 WebP 与缩略图转换：动图转静态会丢失动画，得不偿失
+    const isAnimated = file.type === "image/gif";
+    let webpVariant: { path: string; width: number; height: number } | null = null;
+    const thumbnails: Array<{ width: number; path: string }> = [];
+
+    if (!isAnimated) {
+      const webpBuffer = await sharp(buffer).webp({ quality: 82 }).toBuffer();
+      const webpKey = `${dir}/${stem}.webp`;
+      await storage.put({ key: webpKey, body: webpBuffer, contentType: "image/webp" });
+      webpVariant = {
+        path: webpKey,
+        width: meta.width ?? 0,
+        height: meta.height ?? 0,
+      };
+
+      // 只生成比原图更小的档位，放大无意义且浪费空间
+      for (const width of THUMBNAIL_WIDTHS) {
+        if (meta.width && meta.width <= width) continue;
+        const thumbBuffer = await sharp(buffer)
+          .resize({ width, withoutEnlargement: true })
+          .webp({ quality: 78 })
+          .toBuffer();
+        const thumbKey = `${dir}/${stem}-${width}.webp`;
+        await storage.put({ key: thumbKey, body: thumbBuffer, contentType: "image/webp" });
+        thumbnails.push({ width, path: thumbKey });
+      }
+    }
+
+    const media = await prisma.media.create({
+      data: {
+        path: originalKey,
+        originalName: file.name,
+        mimeType: file.type,
+        size: file.size,
+        width: meta.width ?? null,
+        height: meta.height ?? null,
+        variants: { webp: webpVariant, thumbnails },
+      },
+    });
+
+    // 编辑器插图优先用 WebP，GIF 场景回退到原图
+    const displayKey = webpVariant?.path ?? originalKey;
+    return NextResponse.json({
+      msg: "图片上传成功。",
+      id: media.id,
+      url: storage.getUrl(displayKey),
       width: meta.width ?? null,
       height: meta.height ?? null,
-      variants: { webp: webpVariant, thumbnails },
-    },
-  });
-
-  // 编辑器插图优先用 WebP，GIF 场景回退到原图
-  const displayKey = webpVariant?.path ?? originalKey;
-
-  return NextResponse.json({
-    id: media.id,
-    url: storage.getUrl(displayKey),
-    width: meta.width ?? null,
-    height: meta.height ?? null,
-  });
+    });
+  } catch (error) {
+    logError(error, "uploadImage");
+    return errorResponse(toPublicError(error));
+  }
 }
 
 function extensionFor(mimeType: string): string {

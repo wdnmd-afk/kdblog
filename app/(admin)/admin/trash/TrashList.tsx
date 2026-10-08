@@ -30,7 +30,7 @@ export function TrashList({ items }: { items: TrashItem[] }) {
       if (result.ok) {
         toast(`文章「${item.title}」已还原`, "success");
       } else {
-        toast(result.error, "error");
+        toast(result.msg, "error");
       }
     });
   }
@@ -55,7 +55,7 @@ export function TrashList({ items }: { items: TrashItem[] }) {
       if (result.ok) {
         toast(`文章「${item.title}」已彻底删除`, "success");
       } else {
-        toast(result.error, "error");
+        toast(result.msg, "error");
       }
     });
   }

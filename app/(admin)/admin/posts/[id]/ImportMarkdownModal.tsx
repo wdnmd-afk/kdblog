@@ -5,6 +5,7 @@ import { FileUp, Upload } from "lucide-react";
 
 import { Modal } from "@/components/overlay";
 import { Button, cx } from "@/components/ui";
+import { PUBLIC_ERRORS } from "@/lib/errors";
 // 从 ./file 而非 barrel 引入：barrel 会连带评估 marked 与 turndown
 // （合计约 650KB），而这里只需要三个常量。同理见 lib/tiptap/plain-text.ts
 import {
@@ -107,9 +108,12 @@ export function ImportMarkdownModal({
         return;
       }
 
-      const parsed = await parseMarkdownAction({ raw });
+      const parsed = await parseMarkdownAction({ raw }).catch(() => ({
+        ok: false as const,
+        msg: PUBLIC_ERRORS.REQUEST_FAILED.message,
+      }));
       if (!parsed.ok) {
-        setError(parsed.error);
+        setError(parsed.msg);
         return;
       }
 

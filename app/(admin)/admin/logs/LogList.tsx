@@ -50,10 +50,10 @@ export function LogList({
     startTransition(async () => {
       const result = await clearLogsAction();
       if (result.ok) {
-        toast("日志已清空", "success");
+        toast(result.msg, "success");
         router.refresh();
       } else {
-        toast(result.error, "error");
+        toast(result.msg, "error");
       }
     });
   }

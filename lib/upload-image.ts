@@ -1,3 +1,6 @@
+import { PUBLIC_ERRORS } from "./errors";
+import { readHttpError } from "./http-error";
+
 /**
  * 编辑器图片上传。
  *
@@ -16,8 +19,8 @@ export interface UploadedImage {
 }
 
 export type UploadResult =
-  | { ok: true; data: UploadedImage }
-  | { ok: false; error: string };
+  | { ok: true; msg: string; data: UploadedImage }
+  | { ok: false; msg: string };
 
 /** 允许插入正文的图片类型，与 /api/upload 的白名单一致 */
 export const ACCEPTED_IMAGE_TYPES =
@@ -25,35 +28,46 @@ export const ACCEPTED_IMAGE_TYPES =
 
 export async function uploadImage(file: File): Promise<UploadResult> {
   // 前端先挡一道：拖入非图片文件时不发无谓的请求，用户也能立刻得到反馈
-  if (!file.type.startsWith("image/")) {
-    return { ok: false, error: "只能插入图片文件" };
+  if (!ACCEPTED_IMAGE_TYPES.split(",").includes(file.type)) {
+    return { ok: false, msg: "仅支持 JPEG、PNG、WebP 和 GIF 图片，请更换文件。" };
+  }
+  if (file.size === 0) {
+    return { ok: false, msg: "图片内容为空，请重新选择图片。" };
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    return { ok: false, msg: "图片超过 10MB，请压缩或选择较小的图片。" };
   }
 
+  const body = new FormData();
+  body.append("file", file);
+  let response: Response;
   try {
-    const body = new FormData();
-    body.append("file", file);
-
-    const res = await fetch("/api/upload", { method: "POST", body });
-    const data = (await res.json()) as {
-      url?: string;
-      width?: number | null;
-      height?: number | null;
-      error?: string;
-    };
-
-    if (!res.ok || !data.url) {
-      return { ok: false, error: data.error ?? "上传失败" };
-    }
-
-    return {
-      ok: true,
-      data: {
-        url: data.url,
-        width: data.width ?? null,
-        height: data.height ?? null,
-      },
-    };
+    response = await fetch("/api/upload", { method: "POST", body });
   } catch {
-    return { ok: false, error: "上传失败，请检查网络" };
+    return { ok: false, msg: PUBLIC_ERRORS.REQUEST_FAILED.message };
   }
+
+  if (!response.ok) return { ok: false, msg: await readHttpError(response) };
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    return { ok: false, msg: PUBLIC_ERRORS.INVALID_RESPONSE.message };
+  }
+  if (!isUploadResponse(data)) {
+    return { ok: false, msg: PUBLIC_ERRORS.INVALID_RESPONSE.message };
+  }
+
+  return { ok: true, msg: data.msg, data: { url: data.url, width: data.width, height: data.height } };
+}
+
+export function isUploadResponse(value: unknown): value is UploadedImage & { msg: string } {
+  return (
+    typeof value === "object" && value !== null &&
+    "msg" in value && typeof value.msg === "string" && value.msg.trim().length > 0 &&
+    "url" in value && typeof value.url === "string" && value.url.length > 0 &&
+    "width" in value && (value.width === null || typeof value.width === "number") &&
+    "height" in value && (value.height === null || typeof value.height === "number")
+  );
 }

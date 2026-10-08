@@ -17,6 +17,7 @@ import {
   type BadgeTone,
 } from "@/components/ui";
 import { PostBulkTable, type PostRow } from "./PostBulkTable";
+import { ImportMarkdownButton } from "./ImportMarkdownButton";
 
 /**
  * 文章列表。
@@ -139,10 +140,15 @@ export default async function PostsPage({
         title="文章"
         description={`共 ${total} 篇`}
         actions={
-          <Link href="/admin/posts/new" className={buttonClass("primary")}>
-            <Plus size={16} />
-            写文章
-          </Link>
+          <>
+            {/* 上传 MD 是次要入口，排在主动作「写文章」左侧。
+                它只负责选文件与解析，落地靠跳转到写文章页，见组件内说明 */}
+            <ImportMarkdownButton />
+            <Link href="/admin/posts/new" className={buttonClass("primary")}>
+              <Plus size={16} />
+              写文章
+            </Link>
+          </>
         }
       />
 

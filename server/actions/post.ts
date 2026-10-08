@@ -16,7 +16,7 @@ import { normalizeError, toFieldErrors, type ActionResult } from "./types";
  * 文章相关的 Server Actions。
  *
  * 约定：
- * 1. 每个 action 首行必须 requireAdmin()——middleware 拦不住对 action 的直接 POST。
+ * 1. 每个 action 在 try 内先 requireAdmin()，既拦截直接 POST，也把会话与连接异常转为提示。
  * 2. 校验失败返回字段级错误对象而非抛异常，便于表单就地展示。
  * 3. 写成功后按 tag 精准失效，不做全站 revalidate。
  */
@@ -66,24 +66,23 @@ const publishSchema = basePostSchema.extend({
  * 而前台会继续吐旧 HTML 直到缓存自然过期（最长数天）。
  */
 export async function saveDraftAction(input: unknown): Promise<ActionResult<{ id: number }>> {
-  const user = await requireAdmin();
-
-  const parsed = saveDraftSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "表单校验未通过", fieldErrors: toFieldErrors(parsed.error) };
-  }
-
   try {
+    const user = await requireAdmin();
+    const parsed = saveDraftSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, msg: "请检查并完善表单信息后重试。", fieldErrors: toFieldErrors(parsed.error) };
+    }
+
     const post = await postService.saveDraft({ ...parsed.data, authorId: user.id });
     if (post.status === ContentStatus.PUBLISHED) {
       updateTag(POST_TAG(post.id));
       updateTag(POST_LIST_TAG);
     }
     revalidatePath("/admin/posts");
-    return { ok: true, data: { id: post.id } };
+    return { ok: true, msg: "文章已保存。", data: { id: post.id } };
   } catch (error) {
     logError(error, "saveDraftAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
@@ -94,82 +93,81 @@ export async function saveDraftAction(input: unknown): Promise<ActionResult<{ id
  * 事务提交即算发布成功，随后按 tag 精准失效该文章页与列表页。
  */
 export async function publishPostAction(input: unknown): Promise<ActionResult<{ id: number; path: string }>> {
-  const user = await requireAdmin();
-
-  const parsed = publishSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "SEO 信息不完整，无法发布", fieldErrors: toFieldErrors(parsed.error) };
-  }
-
   try {
+    const user = await requireAdmin();
+    const parsed = publishSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, msg: "文章或 SEO 信息不完整，请检查并完善后再发布。", fieldErrors: toFieldErrors(parsed.error) };
+    }
+
     const post = await postService.publish({ ...parsed.data, authorId: user.id });
     updateTag(POST_TAG(post.id));
     updateTag(POST_LIST_TAG);
     revalidatePath("/admin/posts");
-    return { ok: true, data: { id: post.id, path: buildPostPath(post.slug, post.id) } };
+    return { ok: true, msg: "文章已发布。", data: { id: post.id, path: buildPostPath(post.slug, post.id) } };
   } catch (error) {
     logError(error, "publishPostAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
 /** 取消发布：退回草稿态，前台立即不可见 */
 export async function unpublishPostAction(id: number): Promise<ActionResult> {
-  await requireAdmin();
   try {
+    await requireAdmin();
     await postService.unpublish(id);
     updateTag(POST_TAG(id));
     updateTag(POST_LIST_TAG);
     revalidatePath("/admin/posts");
-    return { ok: true, data: undefined };
+    return { ok: true, msg: "已取消发布，文章已转为草稿。", data: undefined };
   } catch (error) {
     logError(error, "unpublishPostAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
 /** 移入回收站（软删除），前台立即不可见但数据保留 */
 export async function trashPostAction(id: number): Promise<ActionResult> {
-  await requireAdmin();
   try {
+    await requireAdmin();
     await postService.softDelete(id);
     updateTag(POST_TAG(id));
     updateTag(POST_LIST_TAG);
     revalidatePath("/admin/posts");
     revalidatePath("/admin/trash");
-    return { ok: true, data: undefined };
+    return { ok: true, msg: "文章已移入回收站，可在回收站还原。", data: undefined };
   } catch (error) {
     logError(error, "trashPostAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
 /** 从回收站还原，还原后保持原状态（已发布的文章会重新在前台可见） */
 export async function restorePostAction(id: number): Promise<ActionResult> {
-  await requireAdmin();
   try {
+    await requireAdmin();
     await postService.restore(id);
     updateTag(POST_TAG(id));
     updateTag(POST_LIST_TAG);
     revalidatePath("/admin/posts");
     revalidatePath("/admin/trash");
-    return { ok: true, data: undefined };
+    return { ok: true, msg: "文章已还原。", data: undefined };
   } catch (error) {
     logError(error, "restorePostAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
 /** 彻底删除：连带版本快照与 SEO 元信息一并清除，不可恢复 */
 export async function purgePostAction(id: number): Promise<ActionResult> {
-  await requireAdmin();
   try {
+    await requireAdmin();
     await postService.purge(id);
     revalidatePath("/admin/trash");
-    return { ok: true, data: undefined };
+    return { ok: true, msg: "文章已彻底删除。", data: undefined };
   } catch (error) {
     logError(error, "purgePostAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
@@ -182,12 +180,12 @@ export async function purgePostAction(id: number): Promise<ActionResult> {
 export async function createPreviewLinkAction(
   postId: number
 ): Promise<ActionResult<{ url: string }>> {
-  await requireAdmin();
   try {
-    return { ok: true, data: { url: buildPreviewUrl(postId) } };
+    await requireAdmin();
+    return { ok: true, msg: "预览链接已生成。", data: { url: buildPreviewUrl(postId) } };
   } catch (error) {
     logError(error, "createPreviewLinkAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
@@ -202,8 +200,8 @@ export async function revertToRevisionAction(
   postId: number,
   version: number
 ): Promise<ActionResult<{ title: string; excerpt: string; contentJson: unknown }>> {
-  await requireAdmin();
   try {
+    await requireAdmin();
     const post = await postService.revertToRevision(postId, version);
     // 回滚同样重写正文，已发布文章需要立即失效前台缓存
     if (post.status === ContentStatus.PUBLISHED) {
@@ -213,6 +211,7 @@ export async function revertToRevisionAction(
     revalidatePath(`/admin/posts/${postId}`);
     return {
       ok: true,
+      msg: "已恢复所选版本，请确认内容。",
       data: {
         title: post.title,
         excerpt: post.excerpt,
@@ -221,7 +220,7 @@ export async function revertToRevisionAction(
     };
   } catch (error) {
     logError(error, "revertToRevisionAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
@@ -235,7 +234,7 @@ const batchIdsSchema = z.array(z.number().int().positive()).min(1, "请先选择
 /** 批量结果的展示层形状：直接给一句可读的结论，避免每个调用方各自拼文案 */
 export interface BatchActionResult {
   ok: boolean;
-  message: string;
+  msg: string;
 }
 
 /**
@@ -245,14 +244,13 @@ export interface BatchActionResult {
  * 批量场景下用户没机会逐篇补字段，静默失败会让人以为系统坏了。
  */
 export async function publishPostsInBatchAction(ids: unknown): Promise<BatchActionResult> {
-  await requireAdmin();
-
-  const parsed = batchIdsSchema.safeParse(ids);
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? "参数不正确" };
-  }
-
   try {
+    await requireAdmin();
+    const parsed = batchIdsSchema.safeParse(ids);
+    if (!parsed.success) {
+      return { ok: false, msg: parsed.error.issues[0]?.message ?? "请选择要操作的文章后重试。" };
+    }
+
     const { succeeded, skipped } = await postService.publishPostsInBatch(parsed.data);
 
     for (const id of succeeded) {
@@ -264,53 +262,51 @@ export async function publishPostsInBatchAction(ids: unknown): Promise<BatchActi
     revalidatePath("/admin/posts");
 
     if (skipped.length === 0) {
-      return { ok: true, message: `已发布 ${succeeded.length} 篇` };
+      return { ok: true, msg: `已发布 ${succeeded.length} 篇` };
     }
 
     const names = skipped.map((s) => s.title).join("、");
     return {
       ok: true,
-      message: `已发布 ${succeeded.length} 篇；${skipped.length} 篇因 SEO 字段不完整未发布：${names}`,
+      msg: `已发布 ${succeeded.length} 篇；${skipped.length} 篇因 SEO 字段不完整未发布：${names}`,
     };
   } catch (error) {
     logError(error, "publishPostsInBatchAction");
-    return { ok: false, message: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
 /** 批量取消发布：退回草稿态，前台立即不可见 */
 export async function unpublishPostsInBatchAction(ids: unknown): Promise<BatchActionResult> {
-  await requireAdmin();
-
-  const parsed = batchIdsSchema.safeParse(ids);
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? "参数不正确" };
-  }
-
   try {
+    await requireAdmin();
+    const parsed = batchIdsSchema.safeParse(ids);
+    if (!parsed.success) {
+      return { ok: false, msg: parsed.error.issues[0]?.message ?? "请选择要操作的文章后重试。" };
+    }
+
     const { succeeded } = await postService.unpublishPostsInBatch(parsed.data);
     for (const id of succeeded) {
       updateTag(POST_TAG(id));
     }
     updateTag(POST_LIST_TAG);
     revalidatePath("/admin/posts");
-    return { ok: true, message: `已取消发布 ${succeeded.length} 篇` };
+    return { ok: true, msg: `已取消发布 ${succeeded.length} 篇` };
   } catch (error) {
     logError(error, "unpublishPostsInBatchAction");
-    return { ok: false, message: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
 /** 批量移入回收站：软删可恢复，因此不需要二次确认之外的保护 */
 export async function trashPostsInBatchAction(ids: unknown): Promise<BatchActionResult> {
-  await requireAdmin();
-
-  const parsed = batchIdsSchema.safeParse(ids);
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? "参数不正确" };
-  }
-
   try {
+    await requireAdmin();
+    const parsed = batchIdsSchema.safeParse(ids);
+    if (!parsed.success) {
+      return { ok: false, msg: parsed.error.issues[0]?.message ?? "请选择要操作的文章后重试。" };
+    }
+
     const { succeeded } = await postService.trashPostsInBatch(parsed.data);
     for (const id of succeeded) {
       updateTag(POST_TAG(id));
@@ -318,9 +314,9 @@ export async function trashPostsInBatchAction(ids: unknown): Promise<BatchAction
     updateTag(POST_LIST_TAG);
     revalidatePath("/admin/posts");
     revalidatePath("/admin/trash");
-    return { ok: true, message: `已移入回收站 ${succeeded.length} 篇` };
+    return { ok: true, msg: `已移入回收站 ${succeeded.length} 篇` };
   } catch (error) {
     logError(error, "trashPostsInBatchAction");
-    return { ok: false, message: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }

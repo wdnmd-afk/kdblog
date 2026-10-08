@@ -28,6 +28,8 @@ import { editorOnlyExtensions, sharedExtensions } from "@/lib/tiptap/extensions"
 // （连带 happy-dom 与 fs），那是服务端专属依赖，进不了浏览器包
 import { extractPlainText } from "@/lib/tiptap/plain-text";
 import { toPlainJson } from "@/lib/json";
+import { downloadPostMarkdown } from "@/lib/markdown/download";
+import { takePendingMarkdownImport } from "@/lib/pending-md-import";
 import { slugify } from "@/lib/url";
 import type { SeoFormValues } from "@/lib/seo/schema";
 import {
@@ -242,6 +244,94 @@ export function PostEditor({
    * 否则用户会看到两个叠在一起的确认框。
    */
   const askedRecovery = useRef(false);
+
+  /**
+   * 消费列表页「上传 MD」交接过来的内容。
+   *
+   * 必须声明在下面的恢复询问之前：React 按声明顺序执行同一轮的 effect，
+   * 这里灌完内容就同步把 askedRecovery 置位，那条询问在同一轮会被跳过。
+   * 理由是用户刚上传的文件，显然比一份旧的本地残留更符合此刻的意图。
+   *
+   * 这里刻意不调 clear()：新建页的本地草稿只有一个存储槽
+   * （kdblog:post-draft:new），下面的 setContent 会触发 update 事件，
+   * 新内容稍后自然把它覆盖掉。主动删与坐等覆盖结果相同。
+   */
+  const consumedPending = useRef(false);
+  useEffect(() => {
+    if (!editor || consumedPending.current) return;
+    consumedPending.current = true;
+
+    // 读一次就删，见 lib/pending-md-import.ts。即使后续分支提前返回，
+    // 这份交接数据也已经被消费掉，不会在下次打开新建页时又冒出来
+    const pending = takePendingMarkdownImport();
+    if (!pending) return;
+
+    /*
+     * emitUpdate 保持默认（true）：这是一次用户主动发起的内容变更，
+     * 应当触发本地草稿写入，用户万一刷新页面也不至于丢。
+     * 与版本回滚那里传 false 的理由正相反。
+     */
+    editor.commands.setContent(pending.contentJson as object);
+
+    const { meta } = pending;
+
+    /*
+     * 这里的同步 setState 是有意的，因此豁免 set-state-in-effect。
+     *
+     * 该规则防的是「effect 里改 state 触发连锁渲染」，但这一段属于它明确
+     * 允许的另一类用途：从外部系统（浏览器存储）读一次状态同步进 React。
+     * 它只在挂载时跑一次，由 consumedPending 守卫，不会连锁。
+     *
+     * 两个看似更干净的写法都更糟：
+     * - 挪进 useState 初始化器：初始化器在 SSR 阶段也会执行，那时碰
+     *   浏览器存储不是没有 window 就是让服务端渲染出的空输入框与客户端
+     *   带值的版本对不上，换来一个 hydration 不匹配警告。
+     * - 包进 queueMicrotask：只是把同步调用藏到规则看不见的地方，
+     *   语义没变还多一帧闪烁。
+     *
+     * 另外正文必须等 editor 实例就位才能灌（上面的 setContent），
+     * 元信息跟着一起走才能保证两者同时生效、不出现标题先变正文后变。
+     */
+    /* eslint-disable react-hooks/set-state-in-effect */
+    // 新建页各字段都是空的，因此「只填空字段」这条规则等价于全部套用，
+    // 与编辑器内导入 MD 的行为一致
+    if (meta.title) setTitle(meta.title);
+    if (meta.excerpt) setExcerpt(meta.excerpt);
+    // slug 额外过一遍 slugify：frontmatter 里可能带大写或中文，
+    // 直接填进去会在保存时被 slugSchema 拒掉，而错误提示离这次上传很远
+    if (meta.slug) {
+      const normalized = slugify(meta.slug);
+      if (normalized) setSlug(normalized);
+    }
+    // 关键词只在 SEO 那栏还空着时套用，且受 seoPublishSchema 的 8 个上限约束。
+    // 截断而不报错：用户此刻人在编辑器里，没必要为文件里多出来的词卡住
+    if (meta.keywords.length > 0) {
+      setSeo((prev) =>
+        prev.keywords.length > 0 ? prev : { ...prev, keywords: meta.keywords.slice(0, 8) }
+      );
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+
+    // 跳过本轮的「发现未保存的本地内容」询问
+    askedRecovery.current = true;
+
+    toast(
+      pending.fileName
+        ? `已载入「${pending.fileName}」，确认无误后记得保存`
+        : "已载入上传的内容，确认无误后记得保存",
+      "success"
+    );
+
+    /*
+     * frontmatter 的 tags 刻意不自动建标签，与编辑器内导入 MD 一致：
+     * 它们只是字符串，要变成文章标签得走 newTagNames 让服务层 upsert，
+     * 而一次上传就可能凭空造出十几个标签，清理起来很麻烦。
+     */
+    if (meta.tags.length > 0) {
+      toast(`文件里有标签：${meta.tags.join("、")}，可在设置里手动添加`, "info");
+    }
+  }, [editor, toast]);
+
   useEffect(() => {
     if (!editor || askedRecovery.current) return;
     if (!shouldOfferRecovery(draft, post.updatedAt)) return;
@@ -322,10 +412,10 @@ export function PostEditor({
       const details = Object.values(result.fieldErrors ?? {}).flat();
       const summary =
         details.length === 0
-          ? result.error
+          ? result.msg
           : details.length <= 2
-            ? `${result.error}：${details.join("；")}`
-            : `${result.error}：${details.slice(0, 2).join("；")} 等 ${details.length} 项`;
+            ? `${result.msg}：${details.join("；")}`
+            : `${result.msg}：${details.slice(0, 2).join("；")} 等 ${details.length} 项`;
       toast(summary, "error");
 
       // SEO 校验失败时打开抽屉，否则用户在编辑区看不到任何错误提示
@@ -404,14 +494,14 @@ export function PostEditor({
       const input = collectInput();
       const saved = await saveDraftAction(input);
       if (!saved.ok) {
-        toast(saved.error, "error");
+        toast(saved.msg, "error");
         setFieldErrors(saved.fieldErrors ?? {});
         return;
       }
 
       const result = await createPreviewLinkAction(saved.data.id);
       if (!result.ok) {
-        toast(result.error, "error");
+        toast(result.msg, "error");
         return;
       }
 
@@ -444,7 +534,7 @@ export function PostEditor({
     startTransition(async () => {
       const result = await revertToRevisionAction(post.id!, version);
       if (!result.ok) {
-        toast(result.error, "error");
+        toast(result.msg, "error");
         return;
       }
 
@@ -558,7 +648,8 @@ export function PostEditor({
    * 先提醒一次，否则用户会拿到一份缺了最新修改的文件却无从察觉。
    */
   async function handleExport() {
-    if (!post.id) return;
+    const postId = post.id;
+    if (!postId) return;
 
     if (localSavedAt) {
       const ok = await confirm({
@@ -571,22 +662,10 @@ export function PostEditor({
       if (!ok) return;
     }
 
-    /*
-     * 用程序化的 <a download> 触发下载。
-     *
-     * 不用 location.assign：那是「导航」语义，Next 的 lint 规则会警告，
-     * 而这里根本不想离开当前页——响应带 Content-Disposition: attachment，
-     * 浏览器只会存文件。也不用 window.open，它会被弹窗拦截器挡掉。
-     *
-     * download 属性留空：文件名由响应头的 filename 决定（那边按标题与 slug
-     * 生成），写在这里等于把命名规则复制一份到前端，两处迟早会不一致。
-     */
-    const link = document.createElement("a");
-    link.href = `/api/posts/${post.id}/export`;
-    link.download = "";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    startTransition(async () => {
+      const result = await downloadPostMarkdown(postId);
+      if (!result.ok) toast(result.msg, "error");
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -626,16 +705,29 @@ export function PostEditor({
         {/* 保存状态。比 toast 安静：自动保存是持续发生的，每次都弹提示会干扰写作 */}
         <SaveStatus pending={pending} localSavedAt={localSavedAt} isNew={isNew} />
 
+        {/**
+         * 窄屏下的可辨识性。
+         *
+         * 这些按钮的文字被断点隐藏后只剩图标，而 `display:none` 会同时把文字
+         * 移出无障碍树——按钮就此变成一个没有可访问名的图标。因此：
+         *
+         * 1. 凡文字会被隐藏的按钮一律补 aria-label（文案与可见文字一致，
+         *    满足 WCAG 2.5.3「可访问名包含可见标签」）
+         * 2. 导入 / 导出这两个 Markdown 入口包一层 Tooltip，窄屏悬停即时可辨
+         * 3. 「导入 MD」的文字断点从 lg 降到 sm——它是本次被反馈"找不到"的入口，
+         *    在 768px 视口下把整组按钮全部展开会溢出（约 638px > 可用 488px），
+         *    只放开这一个仍在余量内
+         */}
         <div className="ml-auto flex items-center gap-1.5">
           {!isNew && (
-            <Button size="sm" onClick={() => setRevisionsOpen(true)}>
+            <Button size="sm" onClick={() => setRevisionsOpen(true)} aria-label="版本历史">
               <History size={14} />
               <span className="hidden lg:inline">版本</span>
             </Button>
           )}
 
           {!isNew && (
-            <Button size="sm" onClick={handlePreview} disabled={pending}>
+            <Button size="sm" onClick={handlePreview} disabled={pending} aria-label="预览">
               <Eye size={14} />
               <span className="hidden lg:inline">预览</span>
             </Button>
@@ -643,20 +735,35 @@ export function PostEditor({
 
           {/* 导入放在「查看类」这一侧：它虽然会改内容，但紧接着有预览与二次确认，
               不像存草稿/发布那样一点就落库 */}
-          <Button size="sm" onClick={() => setImportOpen(true)} disabled={pending}>
-            <FileUp size={14} />
-            <span className="hidden lg:inline">导入 MD</span>
-          </Button>
-
-          {/* 导出只对已保存的文章有意义：新建页还没有 id，导不出任何东西 */}
-          {!isNew && (
-            <Button size="sm" onClick={handleExport} disabled={pending}>
-              <Download size={14} />
-              <span className="hidden lg:inline">导出 MD</span>
+          <Tooltip label="导入 Markdown 文件到正文" side="bottom">
+            <Button
+              size="sm"
+              onClick={() => setImportOpen(true)}
+              disabled={pending}
+              aria-label="导入 MD"
+            >
+              <FileUp size={14} />
+              <span className="hidden sm:inline">导入 MD</span>
             </Button>
+          </Tooltip>
+
+          {/* 导出只对已保存的文章有意义：新建页还没有 id，导不出任何东西。
+              文字断点保持 lg：它与「导入 MD」同时放开会让整组超出窄屏可用宽度 */}
+          {!isNew && (
+            <Tooltip label="导出为 Markdown 文件" side="bottom">
+              <Button
+                size="sm"
+                onClick={handleExport}
+                disabled={pending}
+                aria-label="导出 MD"
+              >
+                <Download size={14} />
+                <span className="hidden lg:inline">导出 MD</span>
+              </Button>
+            </Tooltip>
           )}
 
-          <Button size="sm" onClick={() => setSettingsOpen(true)}>
+          <Button size="sm" onClick={() => setSettingsOpen(true)} aria-label="设置">
             <Settings2 size={14} />
             <span className="hidden lg:inline">设置</span>
           </Button>

@@ -147,7 +147,7 @@ export function EditorToolbar({
     if (fileInputRef.current) fileInputRef.current.value = "";
 
     if (!result.ok) {
-      onError(result.error);
+      onError(result.msg);
       return;
     }
 

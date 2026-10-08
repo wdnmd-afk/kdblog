@@ -18,23 +18,22 @@ const tagSchema = z.object({
 });
 
 export async function createTagAction(input: unknown): Promise<ActionResult<{ id: number }>> {
-  await requireAdmin();
-
-  const parsed = tagSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "表单校验未通过", fieldErrors: toFieldErrors(parsed.error) };
-  }
-
   try {
+    await requireAdmin();
+    const parsed = tagSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, msg: "请检查并完善表单信息后重试。", fieldErrors: toFieldErrors(parsed.error) };
+    }
+
     const tag = await tagService.createTag({
       name: parsed.data.name,
       slug: parsed.data.slug || undefined,
     });
     revalidatePath("/admin/tags");
-    return { ok: true, data: { id: tag.id } };
+    return { ok: true, msg: "标签已创建。", data: { id: tag.id } };
   } catch (error) {
     logError(error, "createTagAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
@@ -42,23 +41,22 @@ export async function updateTagAction(
   id: number,
   input: unknown
 ): Promise<ActionResult> {
-  await requireAdmin();
-
-  const parsed = tagSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "表单校验未通过", fieldErrors: toFieldErrors(parsed.error) };
-  }
-
   try {
+    await requireAdmin();
+    const parsed = tagSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, msg: "请检查并完善表单信息后重试。", fieldErrors: toFieldErrors(parsed.error) };
+    }
+
     await tagService.updateTag(id, {
       name: parsed.data.name,
       slug: parsed.data.slug || undefined,
     });
     revalidatePath("/admin/tags");
-    return { ok: true, data: undefined };
+    return { ok: true, msg: "标签已更新。", data: undefined };
   } catch (error) {
     logError(error, "updateTagAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
@@ -67,13 +65,13 @@ export async function updateTagAction(
  * 因此不阻止删除有文章的标签，但 UI 会先展示占用数量供确认。
  */
 export async function deleteTagAction(id: number): Promise<ActionResult> {
-  await requireAdmin();
   try {
+    await requireAdmin();
     await tagService.deleteTag(id);
     revalidatePath("/admin/tags");
-    return { ok: true, data: undefined };
+    return { ok: true, msg: "标签已删除。", data: undefined };
   } catch (error) {
     logError(error, "deleteTagAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }

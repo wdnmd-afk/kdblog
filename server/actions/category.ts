@@ -27,20 +27,19 @@ const categorySchema = z.object({
 export async function createCategoryAction(
   input: unknown
 ): Promise<ActionResult<{ id: number }>> {
-  await requireAdmin();
-
-  const parsed = categorySchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "表单校验未通过", fieldErrors: toFieldErrors(parsed.error) };
-  }
-
   try {
+    await requireAdmin();
+    const parsed = categorySchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, msg: "请检查并完善表单信息后重试。", fieldErrors: toFieldErrors(parsed.error) };
+    }
+
     const category = await categoryService.createCategory(parsed.data);
     revalidatePath("/admin/categories");
-    return { ok: true, data: { id: category.id } };
+    return { ok: true, msg: "分类已创建。", data: { id: category.id } };
   } catch (error) {
     logError(error, "createCategoryAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
@@ -48,20 +47,19 @@ export async function updateCategoryAction(
   id: number,
   input: unknown
 ): Promise<ActionResult> {
-  await requireAdmin();
-
-  const parsed = categorySchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: "表单校验未通过", fieldErrors: toFieldErrors(parsed.error) };
-  }
-
   try {
+    await requireAdmin();
+    const parsed = categorySchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, msg: "请检查并完善表单信息后重试。", fieldErrors: toFieldErrors(parsed.error) };
+    }
+
     await categoryService.updateCategory(id, parsed.data);
     revalidatePath("/admin/categories");
-    return { ok: true, data: undefined };
+    return { ok: true, msg: "分类已更新。", data: undefined };
   } catch (error) {
     logError(error, "updateCategoryAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
 
@@ -70,15 +68,14 @@ export async function updateCategoryAction(
  * 关联文章的 categoryId 由外键 SetNull 置空，文章本身不受影响。
  */
 export async function deleteCategoryAction(id: number): Promise<ActionResult> {
-  await requireAdmin();
-
   try {
+    await requireAdmin();
     await categoryService.deleteCategory(id);
     revalidatePath("/admin/categories");
     revalidatePath("/admin/posts");
-    return { ok: true, data: undefined };
+    return { ok: true, msg: "分类已删除。", data: undefined };
   } catch (error) {
     logError(error, "deleteCategoryAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }

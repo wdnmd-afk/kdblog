@@ -212,7 +212,7 @@ export function SlashMenu({
   async function handleFile(file: File) {
     const result = await uploadImage(file);
     if (!result.ok) {
-      onError?.(result.error);
+      onError?.(result.msg);
       return;
     }
 

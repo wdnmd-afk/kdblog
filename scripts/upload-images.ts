@@ -2,6 +2,10 @@ import "dotenv/config";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { PUBLIC_ERRORS } from "../lib/errors";
+import { readHttpError } from "../lib/http-error";
+import { isUploadResponse } from "../lib/upload-image";
+
 /**
  * 把某个目录下的图片经 /api/upload 批量上传，输出可用的 URL 列表。
  *
@@ -70,14 +74,18 @@ async function main() {
       headers: { cookie },
       body: form,
     });
-    const data = (await res.json()) as { url?: string; width?: number; height?: number; error?: string };
+    if (!res.ok) {
+      console.log(`  ✗ ${name}: ${await readHttpError(res)}`);
+      continue;
+    }
 
-    if (!res.ok || !data.url) {
-      console.log(`  ✗ ${name}: ${data.error ?? res.status}`);
+    const data: unknown = await res.json().catch(() => null);
+    if (!isUploadResponse(data)) {
+      console.log(`  ✗ ${name}: ${PUBLIC_ERRORS.INVALID_RESPONSE.message}`);
       continue;
     }
     results.push({ name, url: data.url });
-    console.log(`  ✓ ${name} -> ${data.url}  (${data.width}x${data.height})`);
+    console.log(`  ✓ ${name}: ${data.msg} -> ${data.url}  (${data.width}x${data.height})`);
   }
 
   console.log(`\n成功 ${results.length} / ${files.length}`);

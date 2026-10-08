@@ -1,6 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
 
 import { requireAdmin } from "@/lib/auth";
+import { publicError, toPublicError } from "@/lib/errors";
+import { errorResponse } from "@/lib/http-error";
 import { logError } from "@/lib/logger";
 import { buildFrontmatter } from "@/lib/markdown";
 import { contentJsonToMarkdown } from "@/lib/markdown/server";
@@ -11,10 +13,10 @@ import { getPostForEdit } from "@/server/services/post";
  *
  * 用 Route Handler 而非 Server Action：下载需要 Content-Disposition 响应头，
  * 而 Server Action 只能返回可序列化的值，做不到让浏览器直接存为文件。
- * 前端只需一个 <a href download>，不必拿到字符串再自己造 Blob。
+ * 前端先检查响应状态，再将成功响应作为 Blob 下载，避免把错误正文保存成文件。
  *
  * 导出的是**当前库里的内容**（contentJson），不是编辑器里未保存的修改。
- * 前端在点导出前会先存一次草稿，见 PostEditor 的说明。
+ * 编辑器存在未保存改动时只提醒确认，不自动保存或发布。
  */
 
 /** 文件名里不能出现的字符，逐个换成连字符 */
@@ -40,23 +42,21 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let postId: number | undefined;
   try {
     await requireAdmin();
-  } catch {
-    return new Response("未授权", { status: 401 });
-  }
+    const { id } = await params;
+    postId = Number(id);
+    // Prisma Int 对应有符号 32 位整数，超出范围应作为无效输入而非数据库故障。
+    if (!/^\d+$/.test(id) || !Number.isSafeInteger(postId) || postId < 1 || postId > 2_147_483_647) {
+      return errorResponse(publicError("VALIDATION_ERROR", "文章地址无效，请返回列表重新选择。"));
+    }
 
-  const { id } = await params;
-  if (!/^\d+$/.test(id)) {
-    return new Response("无效的文章 id", { status: 400 });
-  }
+    const post = await getPostForEdit(postId);
+    if (!post) {
+      return errorResponse(publicError("NOT_FOUND", "文章不存在或已被删除，请刷新文章列表。"));
+    }
 
-  const post = await getPostForEdit(Number(id));
-  if (!post) {
-    return new Response("文章不存在或已被删除", { status: 404 });
-  }
-
-  try {
     const body = contentJsonToMarkdown(post.contentJson as JSONContent);
 
     /*
@@ -98,7 +98,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    logError(error, "exportPostMarkdown", { postId: post.id });
-    return new Response("导出失败，请查看系统日志", { status: 500 });
+    logError(error, "exportPostMarkdown", { postId });
+    return errorResponse(toPublicError(error));
   }
 }

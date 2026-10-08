@@ -112,12 +112,12 @@ export function TagManager({ tags }: { tags: TagWithCount[] }) {
         setError(
           result.fieldErrors
             ? Object.values(result.fieldErrors).flat().join("；")
-            : result.error
+            : result.msg
         );
         return;
       }
 
-      toast(editing ? "标签已更新" : "标签已创建", "success");
+      toast(result.msg, "success");
       close();
       router.refresh();
     });
@@ -142,7 +142,7 @@ export function TagManager({ tags }: { tags: TagWithCount[] }) {
         toast(`标签「${tag.name}」已删除`, "success");
         router.refresh();
       } else {
-        toast(result.error, "error");
+        toast(result.msg, "error");
       }
     });
   }

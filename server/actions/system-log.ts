@@ -14,13 +14,13 @@ import { normalizeError, type ActionResult } from "./types";
  */
 
 export async function clearLogsAction(): Promise<ActionResult> {
-  await requireAdmin();
   try {
+    await requireAdmin();
     clearLogs();
     revalidatePath("/admin/logs");
-    return { ok: true, data: undefined };
+    return { ok: true, msg: "日志已清空。", data: undefined };
   } catch (error) {
     logError(error, "clearLogsAction");
-    return { ok: false, error: normalizeError(error) };
+    return { ok: false, msg: normalizeError(error) };
   }
 }
