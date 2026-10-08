@@ -477,8 +477,12 @@
   <section>
     <h2>后台</h2>
     <p class="section-note">
-      桌面优先，侧栏固定 6 项导航（仪表盘 / 文章 / 页面 / 分类 / 标签 / 回收站）+ 底部账号区与退出。
+      桌面优先，侧栏固定 6 项导航（仪表盘 / 文章 / 分类 / 标签 / 回收站 / 系统日志）+ 底部账号区与退出。
       不需要移动端适配，但不应横向溢出。
+    </p>
+    <p class="section-note">
+      2026-09-24 更新：独立页面（Page）模块已整体移除（不产出前台路由，无实际作用），
+      侧栏不再有「页面」一项，仪表盘 KPI 由四张改为三张，回收站只处理文章。
     </p>
 
     <div class="screens">
@@ -587,10 +591,12 @@
 
       <article class="screen">
         <div class="screen-head">
-          <h3>页面列表 / 页面编辑</h3>
-          <span class="route">/admin/pages · /admin/pages/{id}</span>
+          <h3>页面列表 / 页面编辑（已移除）</h3>
+          <span class="route">/admin/pages · /admin/pages/{id} · 2026-09-24 随模块删除</span>
         </div>
         <dl class="screen-body">
+          <dt>移除说明</dt>
+          <dd>该模块不产出前台路由，仅作内容存储，已连同数据库表一并删除。下方描述保留作历史记录，不再对应当前实现。</dd>
           <dt>数据</dt>
           <dd>列表四列：标题、路径、状态、更新时间 + 操作。编辑只有标题、slug、摘要、正文——<strong>没有 SEO Tab、没有分类标签、没有版本历史</strong>。</dd>
           <dt>操作</dt>

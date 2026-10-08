@@ -1,4 +1,5 @@
 import { ContentStatus } from "@prisma/client";
+import { connection } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { countRecentErrors } from "./system-log";
@@ -55,11 +56,17 @@ export interface RecentPostItem {
 }
 
 export interface DashboardOverview {
+  /**
+   * 本次聚合的参考时刻，由服务层统一取一次。
+   *
+   * 页面里的「今天」「上午/下午」都要以它为基准：让页面自己再调一次 new Date()
+   * 既会有跨秒漂移，也会把「必须在 connection() 之后取时」这条约束
+   * 变成靠语句顺序维持的隐式依赖。
+   */
+  now: Date;
   counts: {
     publishedPosts: number;
     draftPosts: number;
-    publishedPages: number;
-    draftPages: number;
     mediaCount: number;
     /** 已格式化的媒体总体积，如 12.4 MB */
     mediaSizeLabel: string;
@@ -82,7 +89,7 @@ export interface DashboardOverview {
     seoIncomplete: number;
     /** 搁置超过 30 天的草稿数 */
     staleDrafts: number;
-    /** 回收站条目总数（文章 + 页面） */
+    /** 回收站条目总数 */
     trashedTotal: number;
     /** 近 24 小时的错误日志条数 */
     recentErrors: number;
@@ -140,6 +147,13 @@ function formatBytes(bytes: number): string {
 // ---------------------------------------------------------------------------
 
 export async function getDashboardOverview(): Promise<DashboardOverview> {
+  // 先等一次真实请求：cacheComponents 下预渲染阶段碰 new Date() 会被判为
+  // 「不稳定值」（每次渲染结果不同，进不了静态外壳）而直接报错。
+  // 异步查询本来就会推迟到请求时执行，只有这里的同步取时会被抓到，
+  // 因此在这一处挡住，整个仪表盘就不再进入静态外壳。
+  // 语义上也正确：仪表盘每次进入都该看到当前时刻的统计，不做缓存。
+  await connection();
+
   const now = new Date();
   const today = startOfDay(now);
 
@@ -151,11 +165,9 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
 
   const [
     postStatusGroups,
-    pageStatusGroups,
     categories,
     categoryGroups,
     trashedPosts,
-    trashedPages,
     mediaAgg,
     publishedTimeline,
     seoIncomplete,
@@ -168,11 +180,6 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
       where: { deletedAt: null },
       _count: { _all: true },
     }),
-    prisma.page.groupBy({
-      by: ["status"],
-      where: { deletedAt: null },
-      _count: { _all: true },
-    }),
     prisma.category.findMany({ select: { id: true, name: true } }),
     prisma.post.groupBy({
       by: ["categoryId"],
@@ -180,7 +187,6 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
       _count: { _all: true },
     }),
     prisma.post.count({ where: { deletedAt: { not: null } } }),
-    prisma.page.count({ where: { deletedAt: { not: null } } }),
     prisma.media.aggregate({ _count: { _all: true }, _sum: { size: true } }),
     // 只取已发布且有 publishedAt 的：取消发布后 publishedAt 会保留（见 post.ts 的 unpublish），
     // 不加 status 条件会把已下架的文章算进发布趋势
@@ -222,7 +228,6 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
   // --- 计数 -----------------------------------------------------------------
 
   const postCountByStatus = new Map(postStatusGroups.map((g) => [g.status, g._count._all]));
-  const pageCountByStatus = new Map(pageStatusGroups.map((g) => [g.status, g._count._all]));
 
   const publishedPosts = postCountByStatus.get(ContentStatus.PUBLISHED) ?? 0;
   const draftPosts = postCountByStatus.get(ContentStatus.DRAFT) ?? 0;
@@ -280,11 +285,10 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
     .slice(0, 5);
 
   return {
+    now,
     counts: {
       publishedPosts,
       draftPosts,
-      publishedPages: pageCountByStatus.get(ContentStatus.PUBLISHED) ?? 0,
-      draftPages: pageCountByStatus.get(ContentStatus.DRAFT) ?? 0,
       mediaCount: mediaAgg._count._all,
       mediaSizeLabel: formatBytes(mediaAgg._sum.size ?? 0),
     },
@@ -304,7 +308,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
     health: {
       seoIncomplete,
       staleDrafts,
-      trashedTotal: trashedPosts + trashedPages,
+      trashedTotal: trashedPosts,
       recentErrors,
     },
   };

@@ -73,7 +73,10 @@ export default async function DashboardPage() {
   const overview = await getDashboardOverview();
   const { counts, deltas, health } = overview;
 
-  const today = new Date();
+  // 用服务层取好的参考时刻，不在这里另调 new Date()：
+  // cacheComponents 下渲染期的当前时间是「不稳定值」，会直接让预渲染报错。
+  // 服务层已在 connection() 之后取时（见 dashboard.ts），走它的结果即可。
+  const today = overview.now;
   const dateLabel = today.toLocaleDateString("zh-CN", {
     year: "numeric",
     month: "long",
@@ -121,7 +124,8 @@ export default async function DashboardPage() {
       </div>
 
       {/* ------------------------------- 概览 ------------------------------- */}
-      <div className="grid flex-none gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {/* 三列而非四列：删除页面模块后只剩三项，固定四列会在末位留一个空格子 */}
+      <div className="grid flex-none gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {/* 数字用等宽字形（tabular-nums）：多张卡并排时，位数不同的数字也能对齐 */}
         <StatCard
           label="已发布"
@@ -156,18 +160,6 @@ export default async function DashboardPage() {
             ) : (
               <TrendHint direction="flat" text="暂无搁置的草稿" />
             )
-          }
-        />
-        <StatCard
-          label="页面"
-          value={counts.publishedPages + counts.draftPages}
-          unit="个页面"
-          href="/admin/pages"
-          trend={
-            <TrendHint
-              direction="flat"
-              text={`${counts.publishedPages} 已发布 · ${counts.draftPages} 草稿`}
-            />
           }
         />
         <StatCard

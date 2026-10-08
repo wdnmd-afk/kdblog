@@ -2,10 +2,10 @@
 // 设计约定见 docs/execution/001-基础架构搭建.md
 //
 // 关键约束：
-// 1. Post/Page 均为软删除（deletedAt），所有读取必须经 server/services 层封装的查询函数，
+// 1. Post 为软删除（deletedAt），所有读取必须经 server/services 层封装的查询函数，
 //    禁止在组件或 action 中直连 prisma.post.findMany，否则回收站内容会漏到前台。
 // 2. contentHtml 使用 @db.Text（PostgreSQL 无长度限制），存放发布时预渲染并 sanitize 后的 HTML。
-// 3. SeoMeta 独立成表而非内嵌 Post：Page 也需要 SEO，且避免与正文并发写互相覆盖。
+// 3. SeoMeta 独立成表而非内嵌 Post：避免与正文并发写互相覆盖。
 
 generator client {
   provider = "prisma-client-js"
@@ -45,7 +45,6 @@ model User {
   updatedAt    DateTime @updatedAt
 
   posts Post[]
-  pages Page[]
 
   @@map("users")
 }
@@ -110,33 +109,6 @@ model PostRevision {
   @@map("post_revisions")
 }
 
-/// 独立页面。当前范围内仅后台管理，不产出前台路由
-/// slug 需校验保留字黑名单（posts/admin/api/sitemap.xml 等），见 lib/seo/schema.ts 的 RESERVED_SLUGS
-model Page {
-  id      Int    @id @default(autoincrement())
-  slug    String @unique
-  title   String
-  excerpt String @db.Text
-
-  contentJson Json
-  contentHtml String? @db.Text
-
-  status      ContentStatus @default(DRAFT)
-  publishedAt DateTime?
-  deletedAt   DateTime?
-
-  authorId String?
-  author   User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  seo SeoMeta?
-
-  @@index([status, deletedAt])
-  @@map("pages")
-}
-
 /// 分类，自引用成树。层级查询使用 PostgreSQL 递归 CTE（见 server/services/category.ts）
 model Category {
   id          Int     @id @default(autoincrement())
@@ -185,17 +157,12 @@ model PostTag {
 
 /// SEO 元信息。字段填写规范与校验规则见 lib/seo/schema.ts，两处必须保持一致
 ///
-/// 一张表同时服务 Post 与 Page，用两个互斥的可空外键而非 targetType+targetId 弱关联：
-/// 这样能走 Prisma include（列表页避免 N+1）、能靠 onDelete 级联清理，也不必自己保证引用完整性。
-/// 约束：postId 与 pageId 必须恰有一个非空，由服务层保证（Prisma 无法表达这类 CHECK）。
+/// 独立成表而非内嵌 Post：避免 SEO 字段与正文并发写互相覆盖。
 model SeoMeta {
   id Int @id @default(autoincrement())
 
   postId Int?  @unique
   post   Post? @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  pageId Int?  @unique
-  page   Page? @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   /// 为空时前台回退到 Post.title
   metaTitle       String?

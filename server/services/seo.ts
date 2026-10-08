@@ -55,10 +55,6 @@ export async function getPostSeoMeta(postId: number): Promise<SeoMeta | null> {
   return prisma.seoMeta.findUnique({ where: { postId } });
 }
 
-export async function getPageSeoMeta(pageId: number): Promise<SeoMeta | null> {
-  return prisma.seoMeta.findUnique({ where: { pageId } });
-}
-
 /**
  * 把 SeoMeta 转成表单初始值，供编辑器 SEO Tab 使用。
  *

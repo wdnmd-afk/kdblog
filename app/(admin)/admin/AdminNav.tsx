@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   FileText,
-  Files,
   FolderTree,
   LayoutDashboard,
   ScrollText,
@@ -28,7 +27,6 @@ import { cx } from "@/components/ui";
 const NAV_ITEMS = [
   { href: "/admin", label: "仪表盘", icon: LayoutDashboard },
   { href: "/admin/posts", label: "文章", icon: FileText },
-  { href: "/admin/pages", label: "页面", icon: Files },
   { href: "/admin/categories", label: "分类", icon: FolderTree },
   { href: "/admin/tags", label: "标签", icon: Tag },
   { href: "/admin/trash", label: "回收站", icon: Trash2 },

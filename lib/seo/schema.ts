@@ -45,8 +45,9 @@ export const slugSchema = z
 /**
  * 前台根路径下的保留 slug。
  *
- * Page 的 slug 走 /{pageSlug}，若与内置路由重名会直接抢占路由，
- * 因此在建/改 Page 时必须过这层校验。当前前台只渲染文章，但保留位要先占住。
+ * 独立页面模块已于 2026-09-24 移除，保留这份黑名单是为将来恢复根路径页面路由
+ * （/{pageSlug}）时不必重新设计——届时与内置路由重名的 slug 会直接抢占路由。
+ * 当前唯一的使用方是下面的 pageSlugSchema，暂无调用点。
  */
 export const RESERVED_SLUGS = new Set([
   "posts",
@@ -63,6 +64,12 @@ export const RESERVED_SLUGS = new Set([
   "_next",
 ]);
 
+/**
+ * 根路径页面的 slug 校验。
+ *
+ * 随独立页面模块的删除进入待用状态（原来只被 server/actions/page.ts 调用）。
+ * 保留它连同上面的黑名单，恢复页面功能时直接接回，无需重新设计校验规则。
+ */
 export const pageSlugSchema = slugSchema.refine(
   (value) => !RESERVED_SLUGS.has(value),
   "该 slug 为系统保留字，请更换"
